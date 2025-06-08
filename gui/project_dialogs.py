@@ -574,6 +574,17 @@ class NewProjectDialog(QDialog):
         lora_group.setLayout(lora_layout)
         layout.addWidget(lora_group)
         
+        from .character_selection_widget import CharacterImageSelectionWidget
+        char_group = QGroupBox("Character Management")
+        char_group.setStyleSheet("QGroupBox { font-weight: bold; }")
+        char_layout = QVBoxLayout()
+        
+        self.character_selection_widget = CharacterImageSelectionWidget()
+        char_layout.addWidget(self.character_selection_widget)
+        
+        char_group.setLayout(char_layout)
+        layout.addWidget(char_group)
+        
         # Multi-language selection
         language_group = QGroupBox("Multi-Language Voice Generation")
         language_group.setStyleSheet("QGroupBox { font-weight: bold; }")
@@ -755,6 +766,8 @@ class NewProjectDialog(QDialog):
         path = QFileDialog.getExistingDirectory(self, "Select Output Directory")
         if path:
             self.output_path.setText(path)
+            if hasattr(self, 'character_selection_widget'):
+                self.character_selection_widget.set_project_directory(path)
     
     def on_channel_changed(self):
         """Update available base models and LoRAs when channel changes."""
@@ -919,7 +932,8 @@ class NewProjectDialog(QDialog):
             "llm_model": self.llm_model_combo.currentText(),
             "render_fps": int(self.render_fps_combo.currentText()),
             "output_fps": int(self.output_fps_combo.currentText()),
-            "frame_interpolation_enabled": self.frame_interpolation_enabled.isChecked()
+            "frame_interpolation_enabled": self.frame_interpolation_enabled.isChecked(),
+            "character_data": self.character_selection_widget.get_character_data() if hasattr(self, 'character_selection_widget') else {}
         }
         
     def show_template(self):
