@@ -2,6 +2,7 @@ from ..common_imports import *
 from ..ai_imports import *
 import time
 import shutil
+from .base_pipeline import BasePipeline
 
 try:
     from PIL import Image, ImageDraw, ImageFont

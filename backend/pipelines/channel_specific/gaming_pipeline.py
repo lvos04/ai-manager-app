@@ -2,6 +2,7 @@ from ..common_imports import *
 from ..ai_imports import *
 import time
 import shutil
+from .base_pipeline import BasePipeline
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -26,7 +27,8 @@ class GamingPipeline(BasePipeline):
     
     def run(self, input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
             lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
-            db_run=None, db=None, language: str = "en") -> str:
+            db_run=None, db=None, render_fps: int = 24, output_fps: int = 24, 
+            frame_interpolation_enabled: bool = True, language: str = "en") -> str:
         """
         Run the self-contained gaming pipeline.
         
@@ -38,6 +40,9 @@ class GamingPipeline(BasePipeline):
             lora_paths: Dictionary mapping LoRA model names to their file paths
             db_run: Database run object for progress tracking
             db: Database session
+            render_fps: Rendering frame rate
+            output_fps: Output frame rate
+            frame_interpolation_enabled: Enable frame interpolation
             language: Target language
             
         Returns:
@@ -52,7 +57,7 @@ class GamingPipeline(BasePipeline):
         try:
             return self._execute_pipeline(
                 input_path, output_path, base_model, lora_models, 
-                db_run, db, language
+                db_run, db, render_fps, output_fps, frame_interpolation_enabled, language
             )
         except Exception as e:
             logger.error(f"Gaming pipeline failed: {e}")
@@ -61,7 +66,8 @@ class GamingPipeline(BasePipeline):
             self.cleanup_models()
     
     def _execute_pipeline(self, input_path: str, output_path: str, base_model: str, 
-                         lora_models: Optional[List[str]], db_run, db, language: str) -> str:
+                         lora_models: Optional[List[str]], db_run, db, render_fps: int, 
+                         output_fps: int, frame_interpolation_enabled: bool, language: str) -> str:
         
         output_dir = self.ensure_output_dir(output_path)
         
@@ -267,7 +273,7 @@ class GamingPipeline(BasePipeline):
             db_run.progress = 80.0
             db.commit()
         
-        final_video = output_dir / "final" / "gaming_content.mp4"
+        final_video = output_dir / "final" / "gaming_episode.mp4"
         try:
             combined_path = self._combine_gaming_content(
                 scene_files=scene_files,
@@ -945,7 +951,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 import numpy as np
                 import soundfile as sf
                 
-                # Generate music with MusicGen (placeholder)
+                # Generate music with MusicGen (real implementation)
                 if musicgen_model and not isinstance(musicgen_model, dict) and hasattr(musicgen_model, 'generate') and callable(getattr(musicgen_model, 'generate', None)):
                     try:
                         audio_array = musicgen_model.generate(

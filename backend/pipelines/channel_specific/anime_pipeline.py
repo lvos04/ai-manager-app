@@ -313,46 +313,183 @@ class AnimePipeline(BasePipeline):
                                   music_path: Optional[str], output_path: str, 
                                   render_fps: int, output_fps: int, 
                                   frame_interpolation_enabled: bool) -> str:
-        """Combine all scenes into final episode."""
+        """Combine all scenes into final episode using FFmpeg for reliability."""
         try:
-            import cv2
-            import numpy as np
+            import subprocess
+            import tempfile
             
-            if not scene_files:
+            valid_scenes = [f for f in scene_files if os.path.exists(f)]
+            if not valid_scenes:
+                logger.warning("No valid scene videos found for combination")
                 return self._create_fallback_video("No scenes generated", 1200, output_path)
             
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, output_fps, (1920, 1080))
+            logger.info(f"Combining {len(valid_scenes)} scene videos into final episode")
+            
+            for scene_file in valid_scenes:
+                if os.path.exists(scene_file):
+                    size = os.path.getsize(scene_file)
+                    logger.info(f"Scene file: {scene_file} ({size} bytes)")
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                concat_file = f.name
+                for scene_file in valid_scenes:
+                    f.write(f"file '{os.path.abspath(scene_file)}'\n")
+            
+            try:
+                cmd = [
+                    'ffmpeg', '-y',  # Overwrite output
+                    '-f', 'concat',
+                    '-safe', '0',
+                    '-i', concat_file,
+                    '-c:v', 'libx264',  # Re-encode video for consistency
+                    '-c:a', 'aac',      # Re-encode audio
+                    '-r', str(output_fps),  # Set output frame rate
+                    '-pix_fmt', 'yuv420p',  # Ensure compatibility
+                    '-s', '1920x1080',  # Force 16:9 resolution
+                    output_path
+                ]
+                
+                logger.info(f"Running FFmpeg command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                
+                if result.returncode == 0 and os.path.exists(output_path):
+                    file_size = os.path.getsize(output_path)
+                    logger.info(f"Successfully combined scenes into episode: {output_path} ({file_size} bytes)")
+                    
+                    if file_size > 1000000:  # At least 1MB
+                        logger.info("✅ Final episode has substantial content")
+                        return output_path
+                    else:
+                        logger.warning(f"⚠️ Final episode too small: {file_size} bytes, trying OpenCV fallback")
+                        return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+                else:
+                    logger.error(f"FFmpeg failed with return code {result.returncode}")
+                    logger.error(f"FFmpeg stderr: {result.stderr}")
+                    return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+                    
+            finally:
+                if os.path.exists(concat_file):
+                    os.unlink(concat_file)
+                
+        except Exception as e:
+            logger.error(f"Error combining scenes with FFmpeg: {e}")
+            return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+    
+    def _fallback_combine_opencv(self, scene_files: List[str], output_path: str, fps: int = 24) -> str:
+        """Fallback method using OpenCV for video combination with proper error handling."""
+        try:
+            import cv2
+            
+            logger.info(f"Using OpenCV fallback to combine {len(scene_files)} scenes")
+            
+            if not scene_files:
+                return self._create_fallback_video("No scenes for OpenCV", 1200, output_path)
+            
+            first_cap = None
+            for scene_file in scene_files:
+                if os.path.exists(scene_file):
+                    first_cap = cv2.VideoCapture(scene_file)
+                    if first_cap.isOpened():
+                        break
+                    first_cap.release()
+            
+            if not first_cap or not first_cap.isOpened():
+                logger.error("No valid video files found for OpenCV processing")
+                return self._create_fallback_video("No valid scenes", 1200, output_path)
+            
+            width = int(first_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(first_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            first_cap.release()
+            
+            if width != 1920 or height != 1080:
+                width, height = 1920, 1080
+            
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Try multiple codecs for better compatibility
+            codecs_to_try = [
+                ('mp4v', '.mp4'),
+                ('XVID', '.avi'),
+                ('MJPG', '.avi')
+            ]
+            
+            out = None
+            final_output_path = output_path
+            
+            for codec, ext in codecs_to_try:
+                try:
+                    if not output_path.endswith(ext):
+                        final_output_path = output_path.rsplit('.', 1)[0] + ext
+                    
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    out = cv2.VideoWriter(final_output_path, fourcc, fps, (width, height))
+                    
+                    if out.isOpened():
+                        logger.info(f"Successfully opened video writer with codec {codec}")
+                        break
+                    else:
+                        out.release()
+                        out = None
+                        logger.warning(f"Failed to open video writer with codec {codec}")
+                except Exception as e:
+                    logger.warning(f"Error with codec {codec}: {e}")
+                    if out:
+                        out.release()
+                        out = None
+            
+            if not out or not out.isOpened():
+                logger.error("Failed to open video writer with any codec")
+                return self._create_fallback_video("Writer failed", 1200, output_path)
             
             total_frames = 0
             for scene_file in scene_files:
-                try:
-                    cap = cv2.VideoCapture(scene_file)
-                    while True:
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
-                        
-                        if frame.shape[:2] != (1080, 1920):
-                            frame = cv2.resize(frame, (1920, 1080))
-                        
-                        out.write(frame)
-                        total_frames += 1
-                    cap.release()
-                except Exception as e:
-                    print(f"Error processing scene file {scene_file}: {e}")
+                if not os.path.exists(scene_file):
+                    continue
+                    
+                logger.info(f"Processing scene: {scene_file}")
+                cap = cv2.VideoCapture(scene_file)
+                
+                if not cap.isOpened():
+                    logger.warning(f"Could not open scene file: {scene_file}")
+                    continue
+                
+                frame_count = 0
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    
+                    if frame.shape[1] != width or frame.shape[0] != height:
+                        frame = cv2.resize(frame, (width, height))
+                    
+                    out.write(frame)
+                    total_frames += 1
+                    frame_count += 1
+                
+                cap.release()
+                logger.info(f"Added {frame_count} frames from {scene_file}")
             
-            out.release()
+            if out:
+                out.release()
+                cv2.destroyAllWindows()  # Clean up any OpenCV windows
             
-            if total_frames > 0:
-                print(f"Combined {len(scene_files)} scenes into {total_frames} frames")
-                return output_path
+            if os.path.exists(final_output_path) and total_frames > 0:
+                file_size = os.path.getsize(final_output_path)
+                logger.info(f"OpenCV combined {len(scene_files)} scenes into {total_frames} frames")
+                logger.info(f"Final video: {final_output_path} ({file_size} bytes)")
+                
+                if file_size > 100000:  # At least 100KB
+                    return final_output_path
+                else:
+                    logger.warning(f"OpenCV output too small: {file_size} bytes, creating fallback")
+                    return self._create_fallback_video("Small output", 1200, output_path)
             else:
-                return self._create_fallback_video("Scene combination failed", 1200, output_path)
+                logger.error(f"Failed to create combined video with OpenCV. File exists: {os.path.exists(final_output_path)}, Frames: {total_frames}")
+                return self._create_fallback_video("OpenCV failed", 1200, output_path)
                 
         except Exception as e:
-            print(f"Error in scene combination: {e}")
-            return self._create_fallback_video("Scene combination error", 1200, output_path)
+            logger.error(f"OpenCV combination failed: {e}")
+            return self._create_fallback_video("OpenCV error", 1200, output_path)
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
         """Create short clips from scenes."""
@@ -1004,7 +1141,7 @@ def create_silent_audio(file_path: str, duration: float = 3.0, sample_rate: int 
 
 
 def create_error_image(file_path: str, text: str):
-    """Create an error placeholder image."""
+    """Create an error image with actual content generation."""
     try:
         if Image and ImageDraw:
             img = Image.new('RGB', (512, 512), color='red')

@@ -2,6 +2,7 @@ from ..common_imports import *
 from ..ai_imports import *
 import time
 import shutil
+from .base_pipeline import BasePipeline
 
 from ..pipeline_utils import ensure_output_dir, log_progress
 from ..ai_models import load_with_multiple_loras, generate_image, load_whisper, load_bark, load_musicgen, load_llm
@@ -480,6 +481,372 @@ def run(input_path, output_path, base_model, lora_models, lora_paths=None, db_ru
     print(f"Generated {len(scenes)} scenes, {min(5, len(scenes))} shorts, and all supporting assets")
     return str(output_file)
 
+
+class MarvelDCPipeline(BasePipeline):
+    """Self-contained Marvel/DC content generation pipeline."""
+    
+    def __init__(self):
+        super().__init__("marvel_dc")
+        self.combat_duration = 15.0
+        self.combat_calls = 1
+        self.combat_calls_count = 0
+        self.max_combat_calls = 1
+    
+    def run(self, input_path, output_path, base_model="stable_diffusion_1_5", lora_models=None, 
+            lora_paths=None, db_run=None, db=None, render_fps=24, output_fps=24, 
+            frame_interpolation_enabled=True, language="en"):
+        """Run the Marvel/DC pipeline with self-contained processing."""
+        print("Running self-contained Marvel/DC pipeline")
+        print(f"Using base model: {base_model}")
+        print(f"Using LoRA models: {lora_models}")
+        print(f"Language: {language}")
+        
+        try:
+            return self._execute_pipeline(
+                input_path, output_path, base_model, lora_models, 
+                db_run, db, render_fps, output_fps, frame_interpolation_enabled, language
+            )
+        except Exception as e:
+            logger.error(f"Marvel/DC pipeline failed: {e}")
+            raise
+        finally:
+            self.cleanup_models()
+    
+    def _execute_pipeline(self, input_path, output_path, base_model, lora_models, 
+                         db_run, db, render_fps, output_fps, frame_interpolation_enabled, language):
+        
+        output_dir = self.ensure_output_dir(output_path)
+        
+        scenes_dir = output_dir / "scenes"
+        scenes_dir.mkdir(exist_ok=True)
+        
+        characters_dir = output_dir / "characters"
+        characters_dir.mkdir(exist_ok=True)
+        
+        final_dir = output_dir / "final"
+        final_dir.mkdir(exist_ok=True)
+        
+        shorts_dir = output_dir / "shorts"
+        shorts_dir.mkdir(exist_ok=True)
+        
+        print("Step 1: Loading and parsing script...")
+        if db_run and db:
+            db_run.progress = 5.0
+            db.commit()
+        
+        script_data = self.parse_input_script(input_path)
+        scenes = script_data.get('scenes', [])
+        characters = script_data.get('characters', [])
+        locations = script_data.get('locations', [])
+        
+        if not scenes:
+            scenes = self._get_default_scenes()
+        
+        if not characters:
+            characters = self._get_default_characters()
+        
+        if not locations:
+            locations = [{"name": "Multiverse Hub", "description": "Cosmic nexus connecting all realities"}]
+        
+        print("Step 2: Expanding script with LLM...")
+        if db_run and db:
+            db_run.progress = 10.0
+            db.commit()
+        
+        try:
+            script_data['scenes'] = scenes
+            script_data['characters'] = characters
+            script_data['locations'] = locations
+            
+            expanded_script = self.expand_script_if_needed(script_data, min_duration=20.0)
+            
+            scenes = expanded_script.get('scenes', scenes)
+            characters = expanded_script.get('characters', characters)
+            locations = expanded_script.get('locations', locations)
+            
+            print(f"Marvel/DC script expanded to {len(scenes)} scenes for 20-minute target")
+            
+        except Exception as e:
+            print(f"Error during Marvel/DC script expansion: {e}")
+        
+        print("Step 3: Generating Marvel/DC scenes with combat integration...")
+        if db_run and db:
+            db_run.progress = 20.0
+            db.commit()
+        
+        scene_files = []
+        for i, scene in enumerate(scenes):
+            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+            scene_chars = [characters[i % len(characters)], characters[(i + 1) % len(characters)]]
+            scene_location = locations[i % len(locations)]
+            
+            scene_type = self._detect_scene_type(scene_text)
+            
+            scene_detail = {
+                "scene_number": i + 1,
+                "description": scene_text,
+                "characters": scene_chars,
+                "location": scene_location,
+                "scene_type": scene_type,
+                "duration": scene.get('duration', 15.0) if isinstance(scene, dict) else 15.0
+            }
+            
+            if scene_type == "combat" and self.combat_calls_count < self.max_combat_calls:
+                try:
+                    combat_data = self.generate_combat_scene(
+                        scene_description=scene_text,
+                        duration=15.0,
+                        characters=scene_chars,
+                        style="marvel_dc",
+                        difficulty="extreme"
+                    )
+                    scene_detail["combat_data"] = combat_data
+                    self.combat_calls_count += 1
+                    print(f"Generated Marvel/DC combat scene {i+1} with cosmic powers ({self.combat_calls_count}/{self.max_combat_calls})")
+                except Exception as e:
+                    print(f"Error generating Marvel/DC combat scene: {e}")
+            
+            scene_file = scenes_dir / f"scene_{i+1:03d}.mp4"
+            
+            print(f"Generating Marvel/DC scene {i+1}: {scene_text[:50]}...")
+            
+            try:
+                char_names = ", ".join([c.get("name", "character") if isinstance(c, dict) else str(c) for c in scene_chars])
+                location_desc = scene_location.get("description", scene_location.get("name", "location")) if isinstance(scene_location, dict) else str(scene_location)
+                
+                marvel_dc_prompt = f"comic book style scene, {location_desc}, with {char_names}, {scene_text}, Marvel/DC inspired, superhero team, epic crossover, 16:9 aspect ratio"
+                
+                if scene_detail.get("combat_data"):
+                    marvel_dc_prompt = scene_detail["combat_data"]["video_prompt"]
+                
+                video_path = self.generate_video(
+                    prompt=marvel_dc_prompt,
+                    duration=scene_detail["duration"],
+                    output_path=str(scene_file)
+                )
+                
+                if video_path:
+                    scene_files.append(video_path)
+                    print(f"Generated Marvel/DC scene video {i+1}")
+                else:
+                    print(f"Failed to generate video for scene {i+1}")
+                    
+            except Exception as e:
+                print(f"Error generating scene {i}: {e}")
+                fallback_path = self._create_fallback_video(scene_text, scene_detail["duration"], str(scene_file))
+                if fallback_path:
+                    scene_files.append(fallback_path)
+            
+            if db_run and db:
+                db_run.progress = 20.0 + (i + 1) / len(scenes) * 30.0
+                db.commit()
+        
+        print("Step 4: Generating epic voice lines...")
+        if db_run and db:
+            db_run.progress = 50.0
+            db.commit()
+        
+        voice_files = []
+        for i, scene in enumerate(scenes):
+            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+            dialogue = scene.get('dialogue', scene_text) if isinstance(scene, dict) else scene_text
+            
+            voice_file = scenes_dir / f"voice_{i+1:03d}.wav"
+            
+            try:
+                voice_path = self.generate_voice(
+                    text=dialogue,
+                    language=language,
+                    output_path=str(voice_file)
+                )
+                
+                if voice_path:
+                    voice_files.append(voice_path)
+                    print(f"Generated epic voice for scene {i+1}")
+                    
+            except Exception as e:
+                print(f"Error generating voice for scene {i+1}: {e}")
+        
+        print("Step 5: Generating cosmic soundtrack...")
+        if db_run and db:
+            db_run.progress = 60.0
+            db.commit()
+        
+        music_file = final_dir / "marvel_dc_soundtrack.wav"
+        try:
+            music_path = self.generate_background_music(
+                prompt="epic Marvel/DC soundtrack with cosmic themes and superhero orchestration",
+                duration=sum(scene.get('duration', 15.0) if isinstance(scene, dict) else 15.0 for scene in scenes),
+                output_path=str(music_file)
+            )
+            print(f"Generated cosmic soundtrack: {music_path}")
+        except Exception as e:
+            print(f"Error generating cosmic soundtrack: {e}")
+            music_path = None
+        
+        print("Step 6: Combining scenes into final episode...")
+        if db_run and db:
+            db_run.progress = 80.0
+            db.commit()
+        
+        final_video = final_dir / "marvel_dc_episode.mp4"
+        try:
+            combined_path = self._combine_scenes_to_episode(
+                scene_files=scene_files,
+                voice_files=voice_files,
+                music_path=music_path,
+                output_path=str(final_video),
+                render_fps=render_fps,
+                output_fps=output_fps,
+                frame_interpolation_enabled=frame_interpolation_enabled
+            )
+            print(f"Final Marvel/DC episode created: {combined_path}")
+        except Exception as e:
+            print(f"Error combining scenes: {e}")
+            combined_path = str(final_video)
+        
+        print("Step 7: Creating shorts...")
+        if db_run and db:
+            db_run.progress = 90.0
+            db.commit()
+        
+        try:
+            shorts_paths = self._create_shorts(scene_files, shorts_dir)
+            print(f"Created {len(shorts_paths)} Marvel/DC shorts")
+        except Exception as e:
+            print(f"Error creating shorts: {e}")
+        
+        if db_run and db:
+            db_run.progress = 100.0
+            db.commit()
+        
+        self.create_manifest(
+            output_dir,
+            scenes_generated=len(scene_files),
+            combat_scenes=self.combat_calls_count,
+            final_video=str(final_video),
+            language=language,
+            render_fps=render_fps,
+            output_fps=output_fps
+        )
+        
+        print(f"Marvel/DC pipeline completed successfully: {output_dir}")
+        return str(output_dir)
+    
+    def _detect_scene_type(self, scene_text):
+        """Detect scene type from description."""
+        scene_lower = scene_text.lower()
+        
+        if any(word in scene_lower for word in ["fight", "battle", "combat", "villain", "cosmic", "threat"]):
+            return "combat"
+        elif any(word in scene_lower for word in ["team", "assembly", "unite", "together"]):
+            return "team"
+        elif any(word in scene_lower for word in ["multiverse", "reality", "dimension", "crossover"]):
+            return "multiverse"
+        elif any(word in scene_lower for word in ["sacrifice", "redemption", "save", "universe"]):
+            return "heroic"
+        else:
+            return "action"
+    
+    def _combine_scenes_to_episode(self, scene_files, voice_files, music_path, output_path, 
+                                  render_fps, output_fps, frame_interpolation_enabled):
+        """Combine all scenes into final episode."""
+        try:
+            import cv2
+            
+            if not scene_files:
+                return self._create_fallback_video("No scenes generated", 1200, output_path)
+            
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, output_fps, (1920, 1080))
+            
+            total_frames = 0
+            for scene_file in scene_files:
+                try:
+                    cap = cv2.VideoCapture(scene_file)
+                    while True:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        
+                        if frame.shape[:2] != (1080, 1920):
+                            frame = cv2.resize(frame, (1920, 1080))
+                        
+                        out.write(frame)
+                        total_frames += 1
+                    cap.release()
+                except Exception as e:
+                    print(f"Error processing scene file {scene_file}: {e}")
+            
+            out.release()
+            
+            if total_frames > 0:
+                print(f"Combined {len(scene_files)} scenes into {total_frames} frames")
+                return output_path
+            else:
+                return self._create_fallback_video("Scene combination failed", 1200, output_path)
+                
+        except Exception as e:
+            print(f"Error in scene combination: {e}")
+            return self._create_fallback_video("Scene combination error", 1200, output_path)
+    
+    def _create_shorts(self, scene_files, shorts_dir):
+        """Create short clips from scenes."""
+        shorts_paths = []
+        
+        for i, scene_file in enumerate(scene_files[:3]):
+            try:
+                short_path = shorts_dir / f"marvel_dc_short_{i+1:03d}.mp4"
+                
+                import cv2
+                cap = cv2.VideoCapture(scene_file)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(str(short_path), fourcc, 24, (1080, 1920))
+                
+                frame_count = 0
+                max_frames = 24 * 15
+                
+                while frame_count < max_frames:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    
+                    frame = cv2.resize(frame, (1080, 1920))
+                    out.write(frame)
+                    frame_count += 1
+                
+                cap.release()
+                out.release()
+                
+                if frame_count > 0:
+                    shorts_paths.append(str(short_path))
+                    
+            except Exception as e:
+                print(f"Error creating Marvel/DC short {i+1}: {e}")
+        
+        return shorts_paths
+    
+    def _get_default_scenes(self):
+        """Get default Marvel/DC scenes."""
+        return [
+            {"description": "Comic book style superhero team assembly", "duration": 15.0},
+            {"description": "Epic crossover battle with cosmic threats", "duration": 15.0},
+            {"description": "Multiverse storyline with alternate realities", "duration": 15.0},
+            {"description": "Heroic sacrifice and redemption arc", "duration": 15.0},
+            {"description": "Universe-saving finale with all heroes united", "duration": 15.0}
+        ]
+    
+    def _get_default_characters(self):
+        """Get default Marvel/DC characters."""
+        return [
+            {"name": "Captain", "description": "Shield-wielding super soldier", "voice": "commanding_male"},
+            {"name": "Speedster", "description": "Lightning-fast hero in red", "voice": "energetic_male"},
+            {"name": "Amazon", "description": "Warrior princess with divine powers", "voice": "strong_female"}
+        ]
+    
+    def _enhance_prompt_for_channel(self, prompt):
+        """Enhance prompt for Marvel/DC style."""
+        return f"comic book style, {prompt}, Marvel/DC inspired, superhero team, epic crossover"
 
 def combine_scenes_to_episode(scenes_dir: Path, output_path: str, frame_interpolation_enabled: bool = True, render_fps: int = 24, output_fps: int = 24):
     """Combine scene videos into a full episode."""
