@@ -122,56 +122,69 @@ class TextToVideoGenerator:
             import torch
             logger.info(f"Loading video model: {model_name}")
             
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+            
             if model_name == "svd_xt":
                 from diffusers import StableVideoDiffusionPipeline
                 model = StableVideoDiffusionPipeline.from_pretrained(
                     "stabilityai/stable-video-diffusion-img2vid-xt",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    torch_dtype=dtype,
                     assign=True
                 )
             elif model_name == "zeroscope_v2_xl":
                 from diffusers import DiffusionPipeline
                 model = DiffusionPipeline.from_pretrained(
                     "cerspense/zeroscope_v2_XL",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    torch_dtype=dtype,
                     assign=True
                 )
             elif model_name == "animatediff_v2_sdxl":
                 from diffusers import AnimateDiffPipeline, MotionAdapter
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                dtype = torch.float16 if torch.cuda.is_available() else torch.float32
                 adapter = MotionAdapter.from_pretrained(
                     "guoyww/animatediff-motion-adapter-sdxl-beta",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+                    torch_dtype=dtype,
+                    device_map="auto",
+                    low_cpu_mem_usage=True
                 )
                 model = AnimateDiffPipeline.from_pretrained(
                     "stabilityai/stable-diffusion-xl-base-1.0",
                     motion_adapter=adapter,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+                    torch_dtype=dtype,
+                    device_map="auto",
+                    low_cpu_mem_usage=True
                 )
             elif model_name == "animatediff_lightning":
                 from diffusers import AnimateDiffPipeline
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                dtype = torch.float16 if torch.cuda.is_available() else torch.float32
                 model = AnimateDiffPipeline.from_pretrained(
                     "ByteDance/AnimateDiff-Lightning",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+                    torch_dtype=dtype,
+                    device_map="auto",
+                    low_cpu_mem_usage=True
                 )
             elif model_name == "modelscope_t2v":
                 from diffusers import DiffusionPipeline
                 model = DiffusionPipeline.from_pretrained(
                     "damo-vilab/text-to-video-ms-1.7b",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    torch_dtype=dtype,
                     assign=True
                 )
             elif model_name == "ltx_video":
                 from diffusers import DiffusionPipeline
                 model = DiffusionPipeline.from_pretrained(
                     "Lightricks/LTX-Video",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    torch_dtype=dtype,
                     assign=True
                 )
             elif model_name == "skyreels_v2":
                 from diffusers import DiffusionPipeline
                 model = DiffusionPipeline.from_pretrained(
                     "Skywork/SkyReels-V2-T2V-14B-540P",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    torch_dtype=dtype,
                     assign=True
                 )
             elif model_name == "deforum":
@@ -215,7 +228,7 @@ class TextToVideoGenerator:
                     image = Image.new('RGB', settings.get("resolution", (1024, 576)), color='black')
                     output = model(image, num_frames=settings.get("max_frames", 25))
                     frames = output.frames[0]
-                elif model_name in ["animatediff_v2_sdxl", "animatediff_lightning"]:
+                elif model_name and model_name in ["animatediff_v2_sdxl", "animatediff_lightning"]:
                     output = model(
                         prompt=prompt,
                         num_frames=settings.get("max_frames", 16),
@@ -225,7 +238,7 @@ class TextToVideoGenerator:
                         width=target_res[0]
                     )
                     frames = output.frames[0]
-                elif model_name in ["zeroscope_v2_xl", "modelscope_t2v", "ltx_video", "skyreels_v2"]:
+                elif model_name and model_name in ["zeroscope_v2_xl", "modelscope_t2v", "ltx_video", "skyreels_v2"]:
                     output = model(
                         prompt,
                         num_frames=settings.get("max_frames", 24),

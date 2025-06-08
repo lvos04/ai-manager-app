@@ -62,7 +62,7 @@ class AsyncPipelineManager:
             logger.info(f"Async pipeline completed in {total_time:.2f}s with {len(tasks)} concurrent tasks")
             logger.info(f"Performance metrics: {performance_metrics}")
             
-            self._cleanup_pipeline_memory()
+            self._cleanup_comprehensive_memory()
             self._force_memory_release()
             
             return {
@@ -74,7 +74,7 @@ class AsyncPipelineManager:
             
         except Exception as e:
             logger.error(f"Error in async pipeline execution: {e}")
-            self._cleanup_pipeline_memory()
+            self._cleanup_comprehensive_memory()
             self._force_memory_release()
             return {
                 "success": False,
@@ -82,7 +82,7 @@ class AsyncPipelineManager:
                 "total_time": time.time() - start_time
             }
         finally:
-            self._cleanup_pipeline_memory()
+            self._cleanup_comprehensive_memory()
             self._force_memory_release()
 
     async def _create_video_task(self, scene: Dict, scene_id: int, config: Dict) -> Dict[str, Any]:
@@ -332,7 +332,7 @@ class AsyncPipelineManager:
                     "processing_time": processing_time
                 }
             finally:
-                self._cleanup_pipeline_memory()
+                self._cleanup_comprehensive_memory()
                 self._force_memory_release()
 
     async def _execute_pipeline_task(self, task_data: dict) -> dict:
