@@ -501,13 +501,17 @@ def generate_text_with_kernelllm(prompt: str, max_length: int = 500) -> str:
         logger.info(f"Generating text with KernelLLM: {prompt[:50]}...")
         
         model_name = "facebook/KernelLLM"
-        tokenizer = AutoTokenizer.from_pretrained(model_name, assign=True)
-        model = AutoModelForCausalLM.from_pretrained(model_name, assign=True)
+        device_map = "auto" if torch.cuda.is_available() else "cpu"
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map=device_map,
+            low_cpu_mem_usage=True
+        )
         
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
-        
-        inputs = tokenizer.encode(prompt, return_tensors='pt').to(device)
+        inputs = tokenizer.encode(prompt, return_tensors='pt')
+        if torch.cuda.is_available():
+            inputs = inputs.to("cuda")
         
         with torch.no_grad():
             outputs = model.generate(
@@ -846,8 +850,13 @@ def translate_text_multilang(text: str, target_languages: list) -> dict:
             
             try:
                 model_name = f"Helsinki-NLP/opus-mt-en-{lang_code}"
-                tokenizer = MarianTokenizer.from_pretrained(model_name, assign=True)
-                model = MarianMTModel.from_pretrained(model_name, assign=True)
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
+                tokenizer = MarianTokenizer.from_pretrained(model_name)
+                model = MarianMTModel.from_pretrained(
+                    model_name,
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
+                )
                 
                 inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                 translated = model.generate(**inputs)
@@ -895,8 +904,13 @@ def translate_text_multilang(text: str, target_languages: list) -> dict:
             if lang_code in language_mapping:
                 try:
                     model_name = language_mapping[lang_code]
-                    tokenizer = MarianTokenizer.from_pretrained(model_name, assign=True)
-                    model = MarianMTModel.from_pretrained(model_name, assign=True)
+                    device_map = "auto" if torch.cuda.is_available() else "cpu"
+                    tokenizer = MarianTokenizer.from_pretrained(model_name)
+                    model = MarianMTModel.from_pretrained(
+                        model_name,
+                        device_map=device_map,
+                        low_cpu_mem_usage=True
+                    )
                     
                     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                     translated = model.generate(**inputs)

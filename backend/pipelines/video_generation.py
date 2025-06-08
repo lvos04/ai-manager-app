@@ -127,59 +127,77 @@ class TextToVideoGenerator:
             
             if model_name == "svd_xt":
                 from diffusers import StableVideoDiffusionPipeline
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
                 model = StableVideoDiffusionPipeline.from_pretrained(
                     "stabilityai/stable-video-diffusion-img2vid-xt",
                     torch_dtype=dtype,
-                    assign=True
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
                 )
             elif model_name == "zeroscope_v2_xl":
                 from diffusers import DiffusionPipeline
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
                 model = DiffusionPipeline.from_pretrained(
                     "cerspense/zeroscope_v2_XL",
                     torch_dtype=dtype,
-                    assign=True
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
                 )
             elif model_name == "animatediff_v2_sdxl":
                 from diffusers import AnimateDiffPipeline, MotionAdapter
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
                 adapter = MotionAdapter.from_pretrained(
                     "guoyww/animatediff-motion-adapter-sdxl-beta",
-                    torch_dtype=dtype
-                ).to(device)
+                    torch_dtype=dtype,
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
+                )
                 model = AnimateDiffPipeline.from_pretrained(
                     "stabilityai/stable-diffusion-xl-base-1.0",
                     motion_adapter=adapter,
-                    torch_dtype=dtype
-                ).to(device)
+                    torch_dtype=dtype,
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
+                )
             elif model_name == "animatediff_lightning":
                 from diffusers import AnimateDiffPipeline
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
                 model = AnimateDiffPipeline.from_pretrained(
                     "ByteDance/AnimateDiff-Lightning",
-                    torch_dtype=dtype
-                ).to(device)
+                    torch_dtype=dtype,
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
+                )
             elif model_name == "modelscope_t2v":
                 from diffusers import DiffusionPipeline
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
                 model = DiffusionPipeline.from_pretrained(
                     "damo-vilab/text-to-video-ms-1.7b",
                     torch_dtype=dtype,
-                    assign=True
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
                 )
             elif model_name == "ltx_video":
                 from diffusers import DiffusionPipeline
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
                 model = DiffusionPipeline.from_pretrained(
                     "Lightricks/LTX-Video",
                     torch_dtype=dtype,
-                    assign=True
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
                 )
             elif model_name == "skyreels_v2":
                 from diffusers import DiffusionPipeline
+                device_map = "auto" if torch.cuda.is_available() else "cpu"
                 model = DiffusionPipeline.from_pretrained(
                     "Skywork/SkyReels-V2-T2V-14B-540P",
                     torch_dtype=dtype,
-                    assign=True
+                    device_map=device_map,
+                    low_cpu_mem_usage=True
                 )
             elif model_name == "deforum":
                 logger.info("Deforum requires custom implementation - using fallback")
@@ -188,8 +206,7 @@ class TextToVideoGenerator:
                 logger.warning(f"Unknown model: {model_name}, using fallback")
                 return None
             
-            if torch.cuda.is_available():
-                model = model.to("cuda")
+
             
             if model is not None:
                 self.models[model_name] = model
