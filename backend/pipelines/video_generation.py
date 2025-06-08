@@ -146,22 +146,20 @@ class TextToVideoGenerator:
                 adapter = MotionAdapter.from_pretrained(
                     "guoyww/animatediff-motion-adapter-sdxl-beta",
                     torch_dtype=dtype
-                )
+                ).to(device)
                 model = AnimateDiffPipeline.from_pretrained(
                     "stabilityai/stable-diffusion-xl-base-1.0",
                     motion_adapter=adapter,
-                    torch_dtype=dtype,
-                    low_cpu_mem_usage=True
-                )
+                    torch_dtype=dtype
+                ).to(device)
             elif model_name == "animatediff_lightning":
                 from diffusers import AnimateDiffPipeline
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 dtype = torch.float16 if torch.cuda.is_available() else torch.float32
                 model = AnimateDiffPipeline.from_pretrained(
                     "ByteDance/AnimateDiff-Lightning",
-                    torch_dtype=dtype,
-                    low_cpu_mem_usage=True
-                )
+                    torch_dtype=dtype
+                ).to(device)
             elif model_name == "modelscope_t2v":
                 from diffusers import DiffusionPipeline
                 model = DiffusionPipeline.from_pretrained(
