@@ -258,20 +258,23 @@ class BasePipeline:
             return self.models["llm"]
         
         try:
-            from ..ai_models import load_llm
-            llm_wrapper = load_llm()
+            import torch
+            from transformers import AutoTokenizer, AutoModelForCausalLM
             
-            if llm_wrapper and hasattr(llm_wrapper, 'model') and hasattr(llm_wrapper, 'tokenizer'):
-                self.models["llm"] = {
-                    "model": llm_wrapper.model,
-                    "tokenizer": llm_wrapper.tokenizer,
-                    "wrapper": llm_wrapper
-                }
-                logger.info("LLM model loaded successfully")
-                return self.models["llm"]
-            else:
-                logger.warning("LLM wrapper loaded but missing model/tokenizer")
-                return None
+            model_name = "microsoft/DialoGPT-medium"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            
+            if torch.cuda.is_available():
+                model = model.to(self.device)
+            
+            self.models["llm"] = {
+                "model": model,
+                "tokenizer": tokenizer,
+                "device": self.device
+            }
+            logger.info("LLM model loaded successfully")
+            return self.models["llm"]
             
         except Exception as e:
             logger.error(f"Failed to load LLM model: {e}")
