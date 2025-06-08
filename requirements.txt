@@ -1,0 +1,91 @@
+# Core dependencies - install first
+numpy<2.0.0
+Pillow>=9.0.0
+
+# PyTorch with Windows CUDA support - use standard versions
+torch==2.2.0
+torchvision==0.17.0
+torchaudio==2.2.0
+# For CUDA support, install manually: pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu121
+
+# Core web framework
+fastapi==0.109.0
+uvicorn==0.27.0
+sqlalchemy==2.0.27
+pydantic==2.5.3
+
+# GUI frameworks - conditional for Python 3.12+
+PyQt6>=6.6.0; python_version >= "3.12"
+PySide6>=6.6.0; python_version >= "3.12"
+
+# API and networking
+requests==2.31.0
+httpx==0.25.2
+
+# Database
+aiosqlite==0.19.0
+
+# Utilities
+python-multipart==0.0.7
+python-dotenv==1.0.0
+PyYAML
+psutil>=5.9.0
+
+# AI/ML packages that may depend on torch - install after torch
+huggingface-hub>=0.19.0
+diffusers>=0.24.0
+accelerate>=0.20.0
+# xformers - optional, may cause build issues on some systems
+# Install manually if needed: pip install xformers --index-url https://download.pytorch.org/whl/cu118
+
+# Audio/Video processing
+bark==0.1.5
+
+# TTS>=0.22.0  # Not compatible with Python 3.12 (requires <3.12)
+# Install manually if needed for TTS functionality: pip install TTS==0.21.3 --only-binary=all
+
+transformers>=4.21.0
+scipy>=1.9.0
+soundfile>=0.12.0
+moviepy==1.0.3
+opencv-python>=4.8.0
+librosa>=0.10.0
+
+# Music generation - commented out due to potential thinc dependency conflicts on Python 3.12
+# audiocraft>=1.0.0  # May pull in thinc which fails to compile on Python 3.12
+# Install manually if needed: pip install audiocraft
+rarfile>=4.0
+
+# NLP packages - make optional due to Python 3.12 Windows compilation issues
+# thinc==8.1.12  # Fails to compile on Windows Python 3.12 with C2039 errors
+# spacy==3.7.2   # Depends on thinc
+# Install manually if needed: pip install spacy thinc --only-binary=all
+
+# Multi-language TTS support - commented out due to Python 3.12 incompatibility
+# TTS>=0.22.0  # Requires Python >=3.9.0, <3.12 - not compatible with Python 3.12
+# For TTS functionality on Python 3.12, install manually: pip install TTS==0.21.3 --only-binary=all
+
+# Translation models
+transformers>=4.21.0
+scipy>=1.9.0
+sentencepiece>=0.1.97
+
+# Additional dependencies for enhanced functionality
+opencv-python>=4.8.0
+
+# System dependencies (install manually):
+# ImageMagick - required for MoviePy text rendering
+# Windows: Download from https://imagemagick.org/script/download.php#windows
+# Linux: sudo apt-get install imagemagick
+# macOS: brew install imagemagick
+
+# Optional packages - install manually if needed
+# audiocraft>=1.0.0; python_version < "3.12"
+# thinc and spacy - use pre-built wheels: pip install spacy thinc --only-binary=all
+
+# Enhanced Windows compatibility
+PyQt6>=6.4.0; sys_platform == "win32"
+PySide6>=6.4.0; sys_platform == "win32"
+
+# Packaging
+pyinstaller==6.13.0
