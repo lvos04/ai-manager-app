@@ -902,7 +902,8 @@ class AIModelManager:
                     if self.vram_tier == "medium":
                         pipe.enable_attention_slicing()
                 
-                pipe = pipe.to(device)
+                if torch.cuda.is_available():
+                    pipe = pipe.to(device)
                 
                 if quantization_level in ["int8", "int4"] and hasattr(pipe, "unet"):
                     pipe.unet = self.apply_quantization(pipe.unet, quantization_level)
@@ -1036,7 +1037,7 @@ class AIModelManager:
                             device_map = "cpu"
                             torch_dtype = torch.float32
                         else:
-                            device_map = "auto"
+                            device_map = "balanced"
                             torch_dtype = torch.float16
                     else:
                         device_map = "cpu"
