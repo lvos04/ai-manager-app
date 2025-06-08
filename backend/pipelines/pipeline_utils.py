@@ -501,8 +501,8 @@ def generate_text_with_kernelllm(prompt: str, max_length: int = 500) -> str:
         logger.info(f"Generating text with KernelLLM: {prompt[:50]}...")
         
         model_name = "facebook/KernelLLM"
-        tokenizer = AutoTokenizer.from_pretrained(model_name, assign=True)
-        model = AutoModelForCausalLM.from_pretrained(model_name, assign=True)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(model_name)
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
@@ -846,8 +846,8 @@ def translate_text_multilang(text: str, target_languages: list) -> dict:
             
             try:
                 model_name = f"Helsinki-NLP/opus-mt-en-{lang_code}"
-                tokenizer = MarianTokenizer.from_pretrained(model_name, assign=True)
-                model = MarianMTModel.from_pretrained(model_name, assign=True)
+                tokenizer = MarianTokenizer.from_pretrained(model_name)
+                model = MarianMTModel.from_pretrained(model_name)
                 
                 inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                 translated = model.generate(**inputs)

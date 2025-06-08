@@ -13,6 +13,7 @@ AUDIO_MODELS_DIR = os.path.join(MODELS_DIR, "audio")
 UPSCALING_MODELS_DIR = os.path.join(MODELS_DIR, "upscaling")
 
 DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "output")
+OUTPUT_DIR = DEFAULT_OUTPUT_DIR
 
 CUDA_ENABLED = True
 VRAM_OPTIMIZATION = True

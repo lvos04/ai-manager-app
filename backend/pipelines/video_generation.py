@@ -264,6 +264,7 @@ class TextToVideoGenerator:
             raise Exception(f"Video generation completely failed for {model_name}: {e}")
         finally:
             self._cleanup_model_memory()
+            self.force_cleanup_all_models()
     
     def _cleanup_model_memory(self):
         """Clean up model memory after video generation."""
