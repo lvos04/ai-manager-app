@@ -501,7 +501,7 @@ def generate_text_with_kernelllm(prompt: str, max_length: int = 500) -> str:
         logger.info(f"Generating text with KernelLLM: {prompt[:50]}...")
         
         model_name = "facebook/KernelLLM"
-        device_map = "auto" if torch.cuda.is_available() else "cpu"
+        device_map = "balanced" if torch.cuda.is_available() else "cpu"
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
@@ -850,7 +850,7 @@ def translate_text_multilang(text: str, target_languages: list) -> dict:
             
             try:
                 model_name = f"Helsinki-NLP/opus-mt-en-{lang_code}"
-                device_map = "auto" if torch.cuda.is_available() else "cpu"
+                device_map = "balanced" if torch.cuda.is_available() else "cpu"
                 tokenizer = MarianTokenizer.from_pretrained(model_name)
                 model = MarianMTModel.from_pretrained(
                     model_name,
@@ -904,7 +904,7 @@ def translate_text_multilang(text: str, target_languages: list) -> dict:
             if lang_code in language_mapping:
                 try:
                     model_name = language_mapping[lang_code]
-                    device_map = "auto" if torch.cuda.is_available() else "cpu"
+                    device_map = "balanced" if torch.cuda.is_available() else "cpu"
                     tokenizer = MarianTokenizer.from_pretrained(model_name)
                     model = MarianMTModel.from_pretrained(
                         model_name,
