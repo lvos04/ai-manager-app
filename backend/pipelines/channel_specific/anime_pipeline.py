@@ -204,7 +204,7 @@ class AnimeChannelPipeline(BasePipeline):
             
             scene_file = scenes_dir / f"scene_{i+1:03d}.mp4"
             
-            print(f"Generating anime scene {i+1}: {scene_text[:50]}...")
+            print(f"Generating anime scene {i+1}: {str(scene_text)[:50]}...")
             
             try:
                 char_names = ", ".join([c.get("name", "character") if isinstance(c, dict) else str(c) for c in scene_chars])
@@ -574,38 +574,41 @@ class AnimeChannelPipeline(BasePipeline):
             return self._create_fallback_video("OpenCV error", 1200, output_path)
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
-        """Create short clips from scenes."""
+        """Create shorts by extracting highlights from the main video."""
         shorts_paths = []
         
-        for i, scene_file in enumerate(scene_files[:3]):
-            try:
+        try:
+            main_video_path = None
+            for scene_file in scene_files:
+                if "final" in str(scene_file) or "episode" in str(scene_file):
+                    main_video_path = scene_file
+                    break
+            
+            if not main_video_path and scene_files:
+                main_video_path = scene_files[0]
+            
+            if not main_video_path:
+                logger.warning("No main video found for shorts generation")
+                return shorts_paths
+            
+            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
+            
+            for i, highlight in enumerate(highlights):
                 short_path = shorts_dir / f"short_{i+1:03d}.mp4"
                 
-                import cv2
-                cap = cv2.VideoCapture(scene_file)
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(str(short_path), fourcc, 24, (1080, 1920))
+                short_data = self.create_short_from_highlight(
+                    main_video_path,
+                    highlight,
+                    str(short_path),
+                    i + 1
+                )
                 
-                frame_count = 0
-                max_frames = 24 * 15
-                
-                while frame_count < max_frames:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    
-                    frame = cv2.resize(frame, (1080, 1920))
-                    out.write(frame)
-                    frame_count += 1
-                
-                cap.release()
-                out.release()
-                
-                if frame_count > 0:
+                if short_data:
                     shorts_paths.append(str(short_path))
+                    logger.info(f"Created {self.channel_type} short {i+1}: {short_data['title']}")
                     
-            except Exception as e:
-                print(f"Error creating short {i+1}: {e}")
+        except Exception as e:
+            logger.error(f"Error creating {self.channel_type} shorts: {e}")
         
         return shorts_paths
     
@@ -1012,7 +1015,7 @@ class AnimeChannelPipeline(BasePipeline):
             
             llm_model = self.load_llm_model()
             if llm_model:
-                title = llm_model.generate(title_prompt, max_tokens=50)
+                title = llm_model["generate"](title_prompt, max_tokens=50)
             else:
                 title = f"Epic Anime Adventure - Episode {random.randint(1, 100)}"
             
@@ -1023,7 +1026,7 @@ class AnimeChannelPipeline(BasePipeline):
             description_prompt = f"Generate a detailed YouTube description for an anime episode with {len(scenes)} scenes. Include character introductions, plot summary, and engaging hooks. Language: {language}"
             
             if llm_model:
-                description = llm_model.generate(description_prompt, max_tokens=300)
+                description = llm_model["generate"](description_prompt, max_tokens=300)
             else:
                 description = f"An epic anime adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes!"
             
@@ -1033,7 +1036,7 @@ class AnimeChannelPipeline(BasePipeline):
             next_episode_prompt = f"Based on this anime episode, suggest 3 compelling storylines for the next episode. Be creative and engaging."
             
             if llm_model:
-                next_suggestions = llm_model.generate(next_episode_prompt, max_tokens=200)
+                next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
             else:
                 next_suggestions = "1. The adventure continues with new challenges\n2. Character development and new powers\n3. Epic finale with ultimate showdown"
             

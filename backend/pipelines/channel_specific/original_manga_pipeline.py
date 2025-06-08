@@ -664,7 +664,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
             }
             
             try:
-                video_generator = self.load_video_model("animatediff_v2")
+                video_generator = self._load_video_model("animatediff_v2")
                 if video_generator:
                     success = video_generator.generate_video(
                         **video_params,
@@ -856,7 +856,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
             
             llm_model = self.load_llm_model()
             if llm_model:
-                title = llm_model.generate(title_prompt, max_tokens=50)
+                title = llm_model["generate"](title_prompt, max_tokens=50)
             else:
                 title = f"Original Manga Adventure - Episode {random.randint(1, 100)}"
             
@@ -866,7 +866,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
             description_prompt = f"Generate a detailed YouTube description for a {channel_type} episode with {len(scenes)} scenes. Include character introductions, plot summary, and engaging hooks for manga fans. Language: {language}"
             
             if llm_model:
-                description = llm_model.generate(description_prompt, max_tokens=300)
+                description = llm_model["generate"](description_prompt, max_tokens=300)
             else:
                 description = f"An original manga adventure featuring unique characters and compelling storytelling across {len(scenes)} incredible scenes! Experience original manga content like never before!"
             
@@ -876,7 +876,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
             next_episode_prompt = f"Based on this original manga episode, suggest 3 compelling storylines for the next episode. Be creative and engaging for manga fans."
             
             if llm_model:
-                next_suggestions = llm_model.generate(next_episode_prompt, max_tokens=200)
+                next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
             else:
                 next_suggestions = "1. Character backstory revelation and hidden powers\n2. New rival introduction and competition arc\n3. Emotional character development and relationships"
             
@@ -949,33 +949,42 @@ class OriginalMangaChannelPipeline(BasePipeline):
             logger.error(f"Error combining scenes: {e}")
             return self._create_fallback_video("Episode content", 300, output_path)
     
-    def _create_shorts(self, scene_files: List[str], output_dir: Path) -> List[str]:
-        """Create shorts from scene files."""
+    def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
+        """Create shorts by extracting highlights from the main video."""
         shorts_paths = []
         
         try:
-            for i, scene_file in enumerate(scene_files[:3]):  # Create 3 shorts max
-                short_path = output_dir / f"original_manga_short_{i+1:03d}.mp4"
+            main_video_path = None
+            for scene_file in scene_files:
+                if "final" in str(scene_file) or "episode" in str(scene_file):
+                    main_video_path = scene_file
+                    break
+            
+            if not main_video_path and scene_files:
+                main_video_path = scene_files[0]
+            
+            if not main_video_path:
+                logger.warning("No main video found for shorts generation")
+                return shorts_paths
+            
+            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
+            
+            for i, highlight in enumerate(highlights):
+                short_path = shorts_dir / f"short_{i+1:03d}.mp4"
                 
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-i', scene_file,
-                    '-t', '15',  # 15 second shorts
-                    '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920',  # Vertical format
-                    '-c:v', 'libx264',
-                    '-preset', 'veryslow',
-                    '-crf', '15',
-                    '-c:a', 'aac',
-                    str(short_path)
-                ]
+                short_data = self.create_short_from_highlight(
+                    main_video_path,
+                    highlight,
+                    str(short_path),
+                    i + 1
+                )
                 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-                
-                if result.returncode == 0 and os.path.exists(short_path):
+                if short_data:
                     shorts_paths.append(str(short_path))
+                    logger.info(f"Created {self.channel_type} short {i+1}: {short_data['title']}")
                     
         except Exception as e:
-            logger.error(f"Error creating shorts: {e}")
+            logger.error(f"Error creating {self.channel_type} shorts: {e}")
         
         return shorts_paths
     

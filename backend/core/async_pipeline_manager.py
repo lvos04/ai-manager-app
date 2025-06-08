@@ -12,7 +12,7 @@ from .logging_config import get_logger
 
 logger = get_logger("async_pipeline_manager")
 
-def _get_video_generator():
+class AsyncPipelineManager:
     """Inline video generator to replace TextToVideoGenerator."""
     class InlineVideoGenerator:
         def __init__(self, vram_tier="medium", target_resolution=(1920, 1080)):

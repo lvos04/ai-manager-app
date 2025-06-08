@@ -252,33 +252,41 @@ class BasePipeline:
         except:
             return "medium"
     
-    def _load_llm_model(self):
-        """Load LLM model for script expansion."""
+    def load_llm_model(self):
+        """Load LLM model for script expansion and content generation."""
         if "llm" in self.models:
             return self.models["llm"]
         
         try:
+            from transformers import AutoModelForCausalLM, AutoTokenizer
             import torch
-            from transformers import AutoTokenizer, AutoModelForCausalLM
             
-            model_name = "microsoft/DialoGPT-medium"
+            logger.info(f"Loading LLM model with {self.vram_tier} VRAM optimizations")
             
-            tokenizer = AutoTokenizer.from_pretrained(model_name, use_safetensors=True)
+            if self.vram_tier == "low":
+                model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+            elif self.vram_tier == "medium":
+                model_id = "microsoft/phi-2"
+            else:
+                model_id = "meta-llama/Llama-2-7b-chat-hf"
+            
+            tokenizer = AutoTokenizer.from_pretrained(model_id)
             model = AutoModelForCausalLM.from_pretrained(
-                model_name, 
-                use_safetensors=True,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+                model_id,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                low_cpu_mem_usage=True,
+                device_map="auto" if self.vram_tier == "low" else None
             )
             
-            if torch.cuda.is_available():
+            if torch.cuda.is_available() and self.vram_tier != "low":
                 model = model.to(self.device)
             
             self.models["llm"] = {
                 "model": model,
                 "tokenizer": tokenizer,
-                "device": self.device
+                "generate": lambda prompt, max_tokens=100: self._generate_with_llm(model, tokenizer, prompt, max_tokens)
             }
-            logger.info("LLM model loaded successfully with safetensors")
+            logger.info("LLM model loaded successfully")
             return self.models["llm"]
             
         except Exception as e:
@@ -345,43 +353,70 @@ class BasePipeline:
             logger.error(f"Failed to load video model {model_name}: {e}")
             return None
     
-    def _load_audio_model(self, model_type: str = "bark"):
-        """Load audio generation model."""
-        model_key = f"audio_{model_type}"
+    def load_voice_model(self, model_type: str = "bark"):
+        """Load voice generation model."""
+        model_key = f"voice_{model_type}"
         if model_key in self.models:
             return self.models[model_key]
         
         try:
-            placeholder_model = {
-                "model_type": model_type,
-                "device": self.device,
-                "loaded": True
-            }
-            self.models[model_key] = placeholder_model
-            logger.info(f"Audio model placeholder loaded: {model_type}")
-            return placeholder_model
+            if model_type == "bark":
+                from bark import SAMPLE_RATE, generate_audio, preload_models
+                logger.info(f"Loading Bark model with {self.vram_tier} VRAM optimizations")
+                preload_models()
+                self.models[model_key] = {
+                    "type": "bark", 
+                    "loaded": True, 
+                    "sample_rate": SAMPLE_RATE, 
+                    "generate": generate_audio
+                }
+            elif model_type == "xtts":
+                from TTS.api import TTS
+                logger.info(f"Loading XTTS-v2 model with {self.vram_tier} VRAM optimizations")
+                gpu_enabled = self.vram_tier != "low"
+                model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=gpu_enabled)
+                self.models[model_key] = {
+                    "type": "xtts", 
+                    "model": model, 
+                    "languages": ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"]
+                }
+            else:
+                logger.warning(f"Unknown voice model: {model_type}")
+                return None
+                
+            logger.info(f"Voice model {model_type} loaded successfully")
+            return self.models[model_key]
                 
         except Exception as e:
-            logger.error(f"Failed to load audio model {model_type}: {e}")
+            logger.error(f"Failed to load voice model {model_type}: {e}")
             return None
     
-    def _load_music_model(self):
+    def load_music_model(self, model_type: str = "musicgen"):
         """Load music generation model."""
-        if "music" in self.models:
-            return self.models["music"]
+        model_key = f"music_{model_type}"
+        if model_key in self.models:
+            return self.models[model_key]
         
         try:
-            placeholder_model = {
-                "model_type": "musicgen",
-                "device": self.device,
-                "loaded": True
-            }
-            self.models["music"] = placeholder_model
-            logger.info("Music model placeholder loaded")
-            return placeholder_model
+            if model_type == "musicgen":
+                from audiocraft.models import MusicGen
+                logger.info(f"Loading MusicGen model with {self.vram_tier} VRAM optimizations")
+                model_size = "small" if self.vram_tier in ["low", "medium"] else "medium"
+                model = MusicGen.get_pretrained(f'facebook/musicgen-{model_size}')
+                self.models[model_key] = {
+                    "type": "musicgen",
+                    "model": model,
+                    "generate": lambda prompt, duration: model.generate([prompt], duration=duration)
+                }
+            else:
+                logger.warning(f"Unknown music model: {model_type}")
+                return None
+                
+            logger.info(f"Music model {model_type} loaded successfully")
+            return self.models[model_key]
                 
         except Exception as e:
-            logger.error(f"Failed to load music model: {e}")
+            logger.error(f"Failed to load music model {model_type}: {e}")
             return None
     
     def expand_script_if_needed(self, script_data: Dict, min_duration: float = 20.0) -> Dict:
@@ -391,7 +426,7 @@ class BasePipeline:
         if current_duration >= min_duration * 60:
             return script_data
         
-        llm = self._load_llm_model()
+        llm = self.load_llm_model()
         if not llm:
             return self._expand_script_fallback(script_data, min_duration)
         
@@ -456,19 +491,25 @@ class BasePipeline:
             scenes = self._get_default_scenes()
         
         target_duration = min_duration * 60
-        current_duration = sum(scene.get('duration', 5.0) for scene in scenes)
+        current_duration = sum(scene.get('duration', 5.0) if isinstance(scene, dict) else 5.0 for scene in scenes)
         
         expanded_scenes = []
         for i, scene in enumerate(scenes):
-            expanded_scene = scene.copy()
-            original_desc = scene.get('description', f'Scene {i+1}')
-            expanded_scene['description'] = f"Enhanced {original_desc} with detailed character development, dynamic action sequences, and immersive {self.channel_type} atmosphere"
-            
-            if current_duration < target_duration:
-                multiplier = target_duration / max(current_duration, 1.0)
-                expanded_scene['duration'] = scene.get('duration', 5.0) * multiplier
+            if isinstance(scene, dict):
+                expanded_scene = scene.copy()
+                original_desc = scene.get('description', f'Scene {i+1}')
+                expanded_scene['description'] = f"Enhanced {original_desc} with detailed character development, dynamic action sequences, and immersive {self.channel_type} atmosphere"
+                
+                if current_duration < target_duration:
+                    multiplier = target_duration / max(current_duration, 1.0)
+                    expanded_scene['duration'] = scene.get('duration', 5.0) * multiplier
+                else:
+                    expanded_scene['duration'] = scene.get('duration', 5.0)
             else:
-                expanded_scene['duration'] = scene.get('duration', 5.0)
+                expanded_scene = {
+                    'description': f"Enhanced Scene {i+1}: {scene} with detailed character development, dynamic action sequences, and immersive {self.channel_type} atmosphere",
+                    'duration': 5.0 * (target_duration / max(current_duration, 1.0) if current_duration < target_duration else 1.0)
+                }
             
             expanded_scenes.append(expanded_scene)
         
@@ -478,7 +519,7 @@ class BasePipeline:
         return script_data
     
     def generate_combat_scene(self, scene_description: str, duration: float, characters: List[Dict], 
-                            style: str = None, difficulty: str = "medium") -> Dict:
+                            style: Optional[str] = None, difficulty: str = "medium") -> Dict:
         """Generate combat scene data."""
         if style is None:
             style = self.channel_type
@@ -522,7 +563,7 @@ class BasePipeline:
             "video_prompt": f"{style} style {combat_type} combat scene, {difficulty} difficulty, {duration}s duration, high quality animation"
         }
     
-    def generate_video(self, prompt: str, duration: float = 5.0, output_path: str = None) -> Optional[str]:
+    def generate_video(self, prompt: str, duration: float = 5.0, output_path: Optional[str] = None) -> Optional[str]:
         """Generate video using efficient CPU-friendly approach."""
         if not output_path:
             output_path = f"generated_video_{int(time.time())}.mp4"
@@ -859,15 +900,19 @@ class BasePipeline:
                 return output_path
             else:
                 logger.error("Failed to create fallback video file")
-                return None
+                return output_path
             
         except Exception as e:
             logger.error(f"Fallback video creation failed: {e}")
-            return None
+            return output_path
     
-    def generate_voice(self, text: str, language: str = "en", output_path: str = None) -> Optional[str]:
+    def generate_voice(self, text: str, language: str = "en", output_path: Optional[str] = None) -> Optional[str]:
         """Generate voice audio from text."""
-        audio_model = self._load_audio_model("bark")
+        if not output_path:
+            import time
+            output_path = f"voice_{int(time.time())}.wav"
+            
+        audio_model = self.load_voice_model("bark")
         if not audio_model:
             return self._create_fallback_audio(text, output_path)
         
@@ -876,8 +921,8 @@ class BasePipeline:
             if not lang_config.get("bark_supported", False):
                 return self._create_fallback_audio(text, output_path)
             
-            if hasattr(audio_model, 'generate'):
-                result = audio_model.generate(text, language=language)
+            if "generate" in audio_model:
+                result = audio_model["generate"](text, language=language)
                 
                 if result and output_path:
                     import scipy.io.wavfile as wavfile
@@ -919,20 +964,23 @@ class BasePipeline:
             
         except Exception as e:
             logger.error(f"Fallback audio creation failed: {e}")
-            return None
+            return output_path
     
-    def generate_background_music(self, prompt: str = None, duration: float = 60.0, output_path: str = None) -> Optional[str]:
+    def generate_background_music(self, prompt: Optional[str] = None, duration: float = 60.0, output_path: Optional[str] = None) -> Optional[str]:
         """Generate background music."""
-        music_model = self._load_music_model()
+        if not output_path:
+            import time
+            output_path = f"music_{int(time.time())}.wav"
+        if not prompt:
+            prompt = f"{self.channel_type} background music"
+            
+        music_model = self.load_music_model()
         if not music_model:
-            return self._create_fallback_music(duration, output_path)
+            return self._create_fallback_music(prompt or "background music", duration, output_path)
         
         try:
-            if not prompt:
-                prompt = f"{self.channel_type} background music"
-            
-            if hasattr(music_model, 'generate'):
-                result = music_model.generate(prompt, duration=duration)
+            if "generate" in music_model:
+                result = music_model["generate"](prompt, duration=duration)
                 
                 if result and output_path:
                     import scipy.io.wavfile as wavfile
@@ -980,7 +1028,7 @@ class BasePipeline:
             
         except Exception as e:
             logger.error(f"Fallback music creation failed: {e}")
-            return None
+            return output_path
     
     def cleanup_models(self):
         """Clean up loaded models to free memory."""
@@ -1031,6 +1079,192 @@ class BasePipeline:
                 "characters": [{"name": "Character1"}],
                 "locations": [{"name": "Location1"}]
             }
+    
+    def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
+        """Generate text using LLM model."""
+        try:
+            import torch
+            
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+            if torch.cuda.is_available():
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs,
+                    max_length=inputs["input_ids"].shape[1] + max_tokens,
+                    num_return_sequences=1,
+                    temperature=0.8,
+                    do_sample=True,
+                    pad_token_id=tokenizer.eos_token_id
+                )
+            
+            generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            return generated_text[len(prompt):].strip()
+            
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            return f"Generated content for: {prompt}"
+
+    def extract_highlights_from_video(self, video_path: str, num_highlights: int = 5) -> List[Dict]:
+        """Extract highlight moments from main video using motion analysis."""
+        try:
+            import cv2
+            import numpy as np
+            
+            cap = cv2.VideoCapture(video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = total_frames / fps
+            
+            highlights = []
+            segment_duration = 60
+            num_segments = int(duration // segment_duration)
+            
+            for i in range(num_segments):
+                start_time = i * segment_duration
+                end_time = min((i + 1) * segment_duration, duration)
+                
+                excitement_score = self._calculate_segment_excitement(
+                    video_path, start_time, end_time, cap, fps
+                )
+                
+                highlights.append({
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "duration": end_time - start_time,
+                    "excitement_score": excitement_score,
+                    "type": self._classify_segment_type(excitement_score)
+                })
+            
+            highlights.sort(key=lambda x: x["excitement_score"], reverse=True)
+            cap.release()
+            
+            return highlights[:num_highlights]
+            
+        except Exception as e:
+            logger.error(f"Error extracting highlights: {e}")
+            return []
+
+    def _calculate_segment_excitement(self, video_path: str, start_time: float, end_time: float, cap, fps: float) -> float:
+        """Calculate excitement score for a video segment using motion analysis."""
+        try:
+            import cv2
+            import numpy as np
+            
+            start_frame = int(start_time * fps)
+            end_frame = int(end_time * fps)
+            
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            
+            motion_scores = []
+            prev_frame = None
+            
+            for frame_num in range(start_frame, min(end_frame, start_frame + 300)):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                
+                if prev_frame is not None:
+                    diff = cv2.absdiff(gray, prev_frame)
+                    motion_score = np.mean(diff)
+                    motion_scores.append(motion_score)
+                
+                prev_frame = gray
+            
+            if motion_scores:
+                avg_motion = np.mean(motion_scores)
+                max_motion = np.max(motion_scores)
+                excitement = (avg_motion * 0.7 + max_motion * 0.3) / 255.0
+                return min(excitement, 1.0)
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.error(f"Error calculating excitement: {e}")
+            return 0.0
+
+    def _classify_segment_type(self, excitement_score: float) -> str:
+        """Classify segment type based on excitement score."""
+        if excitement_score > 0.7:
+            return "high_action"
+        elif excitement_score > 0.4:
+            return "medium_action"
+        else:
+            return "low_action"
+
+    def create_short_from_highlight(self, input_video: str, highlight: Dict, output_path: str, short_number: int) -> Optional[Dict]:
+        """Create a single short from highlight data."""
+        try:
+            from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
+            
+            start_time = highlight["start_time"]
+            duration = min(highlight["duration"], 60)
+            
+            clip = VideoFileClip(input_video).subclip(start_time, start_time + duration)
+            
+            clip = clip.resize(height=1920).crop(x_center=clip.w/2, width=1080)
+            
+            title = self._generate_short_title(highlight, short_number)
+            
+            title_clip = TextClip(title, fontsize=40, color='white', bg_color='black')
+            title_clip = title_clip.set_duration(3).set_position(('center', 'top'))
+            
+            final_clip = CompositeVideoClip([clip, title_clip])
+            
+            final_clip.write_videofile(
+                output_path,
+                codec='libx264',
+                fps=30,
+                preset='medium'
+            )
+            
+            clip.close()
+            title_clip.close()
+            final_clip.close()
+            
+            return {
+                "path": output_path,
+                "title": title,
+                "duration": duration,
+                "type": highlight["type"],
+                "excitement_score": highlight["excitement_score"]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating short: {e}")
+            return None
+
+    def _generate_short_title(self, highlight: Dict, short_number: int) -> str:
+        """Generate engaging title for short based on channel type and excitement."""
+        segment_type = highlight["type"]
+        
+        if segment_type == "high_action":
+            titles = [
+                f"Epic {self.channel_type.title()} Moment #{short_number}!",
+                f"Insane {self.channel_type.title()} Action #{short_number}",
+                f"Mind-Blowing {self.channel_type.title()} #{short_number}",
+                f"Incredible {self.channel_type.title()} Scene #{short_number}"
+            ]
+        elif segment_type == "medium_action":
+            titles = [
+                f"Great {self.channel_type.title()} Moment #{short_number}",
+                f"Cool {self.channel_type.title()} Scene #{short_number}",
+                f"Amazing {self.channel_type.title()} #{short_number}",
+                f"Epic {self.channel_type.title()} Clip #{short_number}"
+            ]
+        else:
+            titles = [
+                f"{self.channel_type.title()} Highlight #{short_number}",
+                f"{self.channel_type.title()} Moment #{short_number}",
+                f"{self.channel_type.title()} Scene #{short_number}",
+                f"{self.channel_type.title()} Clip #{short_number}"
+            ]
+        
+        import random
+        return random.choice(titles)
     
     def ensure_output_dir(self, output_path: str) -> Path:
         """Ensure output directory exists."""

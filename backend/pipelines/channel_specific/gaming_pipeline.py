@@ -112,7 +112,7 @@ class GamingChannelPipeline(BasePipeline):
         if is_recording:
             return self._process_game_recording(input_path, output_dir, db_run, db, language, render_fps, output_fps, frame_interpolation_enabled)
         else:
-            return self._process_script_content(input_path, output_dir, db_run, db, language, render_fps, output_fps, frame_interpolation_enabled)
+            return self._process_script_content(input_path, output_dir, db_run, db, language)
     
     def _is_game_recording(self, input_path: str) -> bool:
         """Check if input is a game recording file."""
@@ -141,13 +141,13 @@ class GamingChannelPipeline(BasePipeline):
                 db_run.progress = 50.0
                 db.commit()
             
-            edited_video = self._create_edited_compilation(highlights, output_dir / "final" / "gaming_compilation.mp4")
+            edited_video = self._create_edited_compilation(highlights, str(output_dir / "final" / "gaming_compilation.mp4"))
             
             if db_run and db:
                 db_run.progress = 80.0
                 db.commit()
             
-            shorts = self._create_gaming_shorts(highlights, output_dir / "shorts")
+            shorts = self._create_shorts(highlights, output_dir / "shorts")
             
             if db_run and db:
                 db_run.progress = 100.0
@@ -231,7 +231,7 @@ class GamingChannelPipeline(BasePipeline):
             
             scene_file = output_dir / "scenes" / f"scene_{i+1:03d}.mp4"
             
-            print(f"Generating gaming scene {i+1}: {scene_text[:50]}...")
+            print(f"Generating gaming scene {i+1}: {str(scene_text)[:50]}...")
             
             try:
                 char_names = ", ".join([c.get("name", "character") if isinstance(c, dict) else str(c) for c in scene_chars])
@@ -253,7 +253,7 @@ class GamingChannelPipeline(BasePipeline):
                     
             except Exception as e:
                 print(f"Error generating scene {i}: {e}")
-                fallback_path = self.create_fallback_video(scene_text, scene_detail["duration"], str(scene_file))
+                fallback_path = self._create_fallback_video(scene_text, scene_detail["duration"], str(scene_file))
                 if fallback_path:
                     scene_files.append(fallback_path)
             
@@ -310,7 +310,7 @@ class GamingChannelPipeline(BasePipeline):
             db.commit()
         
         try:
-            shorts_paths = self._create_gaming_shorts(scene_files, output_dir / "shorts")
+            shorts_paths = self._create_shorts(scene_files, output_dir / "shorts")
             print(f"Created {len(shorts_paths)} gaming shorts")
         except Exception as e:
             print(f"Error creating shorts: {e}")
@@ -384,7 +384,7 @@ class GamingChannelPipeline(BasePipeline):
             import cv2
             
             if not highlights:
-                return self.create_fallback_video("No highlights available", 600, output_path)
+                return self._create_fallback_video("No highlights available", 600, output_path)
             
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, 24, (1920, 1080))
@@ -413,11 +413,11 @@ class GamingChannelPipeline(BasePipeline):
                 print(f"Created compilation with {total_frames} frames")
                 return output_path
             else:
-                return self.create_fallback_video("Compilation failed", 600, output_path)
+                return self._create_fallback_video("Compilation failed", 600, output_path)
                 
         except Exception as e:
             print(f"Error creating compilation: {e}")
-            return self.create_fallback_video("Compilation error", 600, output_path)
+            return self._create_fallback_video("Compilation error", 600, output_path)
     
     def _combine_gaming_content(self, scene_files: List[str], voice_files: List[str], output_path: str) -> str:
         """Combine gaming scenes into final content."""
@@ -425,7 +425,7 @@ class GamingChannelPipeline(BasePipeline):
             import cv2
             
             if not scene_files:
-                return self.create_fallback_video("No scenes generated", 1200, output_path)
+                return self._create_fallback_video("No scenes generated", 1200, output_path)
             
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, 24, (1920, 1080))
@@ -454,45 +454,48 @@ class GamingChannelPipeline(BasePipeline):
                 print(f"Combined {len(scene_files)} scenes into {total_frames} frames")
                 return output_path
             else:
-                return self.create_fallback_video("Scene combination failed", 1200, output_path)
+                return self._create_fallback_video("Scene combination failed", 1200, output_path)
                 
         except Exception as e:
             print(f"Error in scene combination: {e}")
-            return self.create_fallback_video("Scene combination error", 1200, output_path)
+            return self._create_fallback_video("Scene combination error", 1200, output_path)
     
-    def _create_gaming_shorts(self, content_files: List[str], shorts_dir: Path) -> List[str]:
-        """Create gaming shorts from content."""
+    def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
+        """Create shorts by extracting highlights from the main video."""
         shorts_paths = []
         
-        for i, content_file in enumerate(content_files[:3]):
-            try:
-                short_path = shorts_dir / f"gaming_short_{i+1:03d}.mp4"
+        try:
+            main_video_path = None
+            for scene_file in scene_files:
+                if "final" in str(scene_file) or "episode" in str(scene_file):
+                    main_video_path = scene_file
+                    break
+            
+            if not main_video_path and scene_files:
+                main_video_path = scene_files[0]
+            
+            if not main_video_path:
+                logger.warning("No main video found for shorts generation")
+                return shorts_paths
+            
+            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
+            
+            for i, highlight in enumerate(highlights):
+                short_path = shorts_dir / f"short_{i+1:03d}.mp4"
                 
-                import cv2
-                cap = cv2.VideoCapture(content_file)
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(str(short_path), fourcc, 24, (1080, 1920))
+                short_data = self.create_short_from_highlight(
+                    main_video_path,
+                    highlight,
+                    str(short_path),
+                    i + 1
+                )
                 
-                frame_count = 0
-                max_frames = 24 * 15
-                
-                while frame_count < max_frames:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    
-                    frame = cv2.resize(frame, (1080, 1920))
-                    out.write(frame)
-                    frame_count += 1
-                
-                cap.release()
-                out.release()
-                
-                if frame_count > 0:
+                if short_data:
                     shorts_paths.append(str(short_path))
+                    logger.info(f"Created {self.channel_type} short {i+1}: {short_data['title']}")
                     
-            except Exception as e:
-                print(f"Error creating gaming short {i+1}: {e}")
+        except Exception as e:
+            logger.error(f"Error creating {self.channel_type} shorts: {e}")
         
         return shorts_paths
     
@@ -503,7 +506,7 @@ class GamingChannelPipeline(BasePipeline):
             final_dir.mkdir(exist_ok=True)
             
             fallback_video = final_dir / "gaming_fallback.mp4"
-            self.create_fallback_video("Gaming content processing failed", 600, str(fallback_video))
+            self._create_fallback_video("Gaming content processing failed", 600, str(fallback_video))
             
             self.create_manifest(
                 output_dir,
