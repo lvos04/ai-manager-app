@@ -161,6 +161,9 @@ class GPUSettingsDialog(QDialog):
             
             tier = self._detect_vram_tier()
             self.current_tier_label.setText(f"Tier: {tier}")
+            
+        except Exception as e:
+            self.current_gpu_label.setText(f"Detection failed: {e}")
     
     def _detect_vram_tier(self):
         """Detect VRAM tier for model recommendations."""
@@ -180,9 +183,6 @@ class GPUSettingsDialog(QDialog):
                 return "cpu"
         except Exception:
             return "unknown"
-            
-        except Exception as e:
-            self.current_gpu_label.setText(f"Detection failed: {e}")
 
     def auto_install_cuda(self):
         """Run automatic CUDA installation with version selection."""

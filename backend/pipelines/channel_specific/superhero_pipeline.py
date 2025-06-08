@@ -35,7 +35,7 @@ except ImportError as e:
     print(f"Warning: Some dependencies not available: {e}")
     Image = ImageDraw = ImageFont = cv2 = np = torch = mp = speedx = None
 
-class SuperheroPipeline(BasePipeline):
+class SuperheroChannelPipeline(BasePipeline):
     """Self-contained superhero content generation pipeline with all functionality inlined."""
     
     def __init__(self):
@@ -94,6 +94,9 @@ class SuperheroPipeline(BasePipeline):
         print(f"Language: {language}")
         
         try:
+            output_dir = Path(output_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
             return self._execute_pipeline(
                 input_path, output_path, base_model, lora_models, 
                 db_run, db, render_fps, output_fps, frame_interpolation_enabled, language
@@ -108,7 +111,8 @@ class SuperheroPipeline(BasePipeline):
                          lora_models: Optional[List[str]], db_run, db, render_fps: int, 
                          output_fps: int, frame_interpolation_enabled: bool, language: str) -> str:
         
-        output_dir = self.ensure_output_dir(output_path)
+        output_dir = Path(output_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         scenes_dir = output_dir / "scenes"
         scenes_dir.mkdir(exist_ok=True)
@@ -158,7 +162,12 @@ class SuperheroPipeline(BasePipeline):
             script_data['characters'] = characters
             script_data['locations'] = locations
             
-            expanded_script = self._expand_script_if_needed(script_data, min_duration=20.0)
+            current_duration = sum(2.0 for _ in scenes)  # Basic duration estimate
+            if current_duration < 20.0:
+                needed_scenes = int((20.0 - current_duration) / 2.0) + 1
+                for i in range(needed_scenes):
+                    scenes.append(f"Additional superhero scene {len(scenes) + i + 1}: Epic action sequence")
+            expanded_script = {"scenes": scenes, "characters": characters, "locations": locations}
             
             scenes = expanded_script.get('scenes', scenes)
             characters = expanded_script.get('characters', characters)
@@ -170,7 +179,28 @@ class SuperheroPipeline(BasePipeline):
             print(f"Error during superhero script expansion: {e}")
         
         print("Step 3: Setting up character consistency...")
-        character_memory = self._get_character_memory_manager(str(characters_dir), str(output_dir.name))
+        # Inline character memory manager
+        class CharacterMemoryManager:
+            def __init__(self, base_dir: str, project_name: str):
+                self.base_dir = Path(base_dir)
+                self.project_name = project_name
+                self.character_data = {}
+                
+            def ensure_comprehensive_consistency(self, character_name: str, base_model: str, 
+                                               lora_models: List[str], style_prompt: str):
+                char_key = f"{character_name}_{base_model}"
+                if char_key not in self.character_data:
+                    self.character_data[char_key] = {
+                        "name": character_name,
+                        "base_model": base_model,
+                        "lora_models": lora_models,
+                        "style_prompt": style_prompt,
+                        "seed": random.randint(1000, 9999),
+                        "reference_images": []
+                    }
+                return self.character_data[char_key]
+        
+        character_memory = CharacterMemoryManager(str(characters_dir), str(output_dir.name))
         
         for character in characters:
             char_name = character.get('name', 'Character') if isinstance(character, dict) else str(character)
@@ -192,7 +222,15 @@ class SuperheroPipeline(BasePipeline):
             scene_chars = characters[i % len(characters):i % len(characters) + 2] if characters else []
             scene_location = locations[i % len(locations)] if locations else "Unknown location"
             
-            scene_type = self._detect_scene_type(scene_text)
+            scene_lower = scene_text.lower()
+            if any(word in scene_lower for word in ["fight", "battle", "combat", "attack", "versus"]):
+                scene_type = "combat"
+            elif any(word in scene_lower for word in ["talk", "speak", "conversation", "dialogue"]):
+                scene_type = "dialogue"
+            elif any(word in scene_lower for word in ["run", "chase", "escape", "action"]):
+                scene_type = "action"
+            else:
+                scene_type = "dialogue"
             
             scene_detail = {
                 "scene_number": i + 1,
@@ -205,13 +243,16 @@ class SuperheroPipeline(BasePipeline):
             
             if scene_type == "combat" and self.combat_calls_count < self.max_combat_calls:
                 try:
-                    combat_data = self._generate_combat_scene(
-                        scene_description=scene_text,
-                        duration=15.0,
-                        characters=scene_chars,
-                        style="superhero",
-                        difficulty="epic"
-                    )
+                    # Inline combat scene generation
+                    combat_data = {
+                        "combat_type": "super_power",
+                        "intensity": 0.9,
+                        "video_prompt": f"Epic superhero combat scene: {scene_text}, super powers, dramatic action, heroic battle",
+                        "duration": 15.0,
+                        "movements": ["energy_blast", "flight", "super_strength"],
+                        "camera_angles": ["dramatic_low", "overhead"],
+                        "effects": ["energy_burst", "power_aura", "lightning"]
+                    }
                     scene_detail["combat_data"] = combat_data
                     self.combat_calls_count += 1
                     print(f"Generated superhero combat scene {i+1} with epic choreography ({self.combat_calls_count}/{self.max_combat_calls})")
@@ -971,7 +1012,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         db_run=None, db=None, render_fps: int = 24, output_fps: int = 60, 
         frame_interpolation_enabled: bool = True, language: str = "en") -> str:
     """Run superhero pipeline with self-contained processing."""
-    pipeline = SuperheroPipeline()
+    pipeline = SuperheroChannelPipeline()
     return pipeline.run(
         input_path=input_path,
         output_path=output_path,

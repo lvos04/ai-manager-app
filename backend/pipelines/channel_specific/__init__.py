@@ -11,12 +11,12 @@ from . import superhero_pipeline
 from . import original_manga_pipeline
 
 CHANNEL_PIPELINES = {
-    "gaming": gaming_pipeline.GamingPipeline,
-    "anime": anime_pipeline.AnimePipeline,
-    "marvel_dc": marvel_dc_pipeline.MarvelDCPipeline,
-    "manga": manga_pipeline.MangaPipeline,
-    "superhero": superhero_pipeline.SuperheroPipeline,
-    "original_manga": original_manga_pipeline.OriginalMangaPipeline
+    "gaming": gaming_pipeline.GamingChannelPipeline,
+    "anime": anime_pipeline.AnimeChannelPipeline,
+    "marvel_dc": marvel_dc_pipeline.MarvelDCChannelPipeline,
+    "manga": manga_pipeline.MangaChannelPipeline,
+    "superhero": superhero_pipeline.SuperheroChannelPipeline,
+    "original_manga": original_manga_pipeline.OriginalMangaChannelPipeline
 }
 
 def get_pipeline_for_channel(channel_type):
