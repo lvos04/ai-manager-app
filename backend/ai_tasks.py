@@ -378,14 +378,11 @@ async def extract_scenes_from_pipeline(pipeline_module, input_path: str, channel
     
     if script_data and isinstance(script_data, dict) and channel_type != "gaming":
         try:
-            from .pipelines.script_expander import expand_script_if_needed
-            from .pipelines.ai_models import load_llm
-            
             logger.info("Starting LLM preparation for script expansion...")
-            llm_model = load_llm()
+            llm_model = _load_llm()
             
             min_duration_minutes = 20.0 / 60.0  # 20 seconds = 0.33 minutes
-            expanded_script = expand_script_if_needed(script_data, min_duration=min_duration_minutes, llm_model=llm_model)
+            expanded_script = _expand_script_if_needed(script_data, min_duration=min_duration_minutes)
             
             if expanded_script != script_data:
                 logger.info(f"Script expanded from {len(script_data.get('scenes', []))} to {len(expanded_script.get('scenes', []))} scenes")
@@ -411,3 +408,94 @@ async def extract_scenes_from_pipeline(pipeline_module, input_path: str, channel
     
     logger.info(f"Prepared {len(scene_details)} scenes for pipeline execution")
     return scene_details
+
+def _load_llm():
+        """Load LLM model for script expansion."""
+        try:
+            import torch
+            from transformers import AutoTokenizer, AutoModelForCausalLM
+            
+            model_name = "microsoft/DialoGPT-medium"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            
+            if torch.cuda.is_available():
+                model = model.to("cuda")
+            
+            return {
+                "model": model,
+                "tokenizer": tokenizer,
+                "device": "cuda" if torch.cuda.is_available() else "cpu"
+            }
+        except Exception as e:
+            logger.error(f"Failed to load LLM model: {e}")
+            return None
+    
+def _expand_script_if_needed(script_data: Dict, min_duration: float = 20.0) -> Dict:
+        """Expand script to target duration using LLM."""
+        current_duration = sum(scene.get('duration', 5.0) for scene in script_data.get('scenes', []))
+        
+        if current_duration >= min_duration * 60:
+            return script_data
+        
+        llm = _load_llm()
+        if not llm:
+            return _expand_script_fallback(script_data, min_duration)
+        
+        try:
+            import torch
+            scenes = script_data.get('scenes', [])
+            expanded_scenes = []
+            
+            for scene in scenes:
+                expanded_scene = scene.copy()
+                
+                if len(scene.get('description', '')) < 100:
+                    prompt = f"Expand this scene with more detail: {scene.get('description', '')}"
+                    
+                    inputs = llm["tokenizer"](prompt, return_tensors="pt", truncation=True, max_length=512)
+                    if torch.cuda.is_available():
+                        inputs = {k: v.to(llm["device"]) for k, v in inputs.items()}
+                    
+                    with torch.no_grad():
+                        outputs = llm["model"].generate(
+                            **inputs,
+                            max_length=inputs["input_ids"].shape[1] + 100,
+                            num_return_sequences=1,
+                            temperature=0.8,
+                            do_sample=True,
+                            pad_token_id=llm["tokenizer"].eos_token_id
+                        )
+                    
+                    expanded_text = llm["tokenizer"].decode(outputs[0], skip_special_tokens=True)
+                    expanded_scene['description'] = expanded_text[len(prompt):].strip()
+                
+                expanded_scene['duration'] = max(scene.get('duration', 5.0), 8.0)
+                expanded_scenes.append(expanded_scene)
+            
+            script_data['scenes'] = expanded_scenes
+            logger.info(f"LLM script expansion completed for {len(expanded_scenes)} scenes")
+            return script_data
+            
+        except Exception as e:
+            logger.error(f"LLM expansion failed: {e}")
+            return _expand_script_fallback(script_data, min_duration)
+    
+def _expand_script_fallback(script_data: Dict, min_duration: float) -> Dict:
+    """Fallback script expansion without LLM."""
+    scenes = script_data.get('scenes', [])
+    expanded_scenes = []
+    
+    for scene in scenes:
+        expanded_scene = scene.copy()
+        description = scene.get('description', '')
+        
+        if len(description) < 50:
+            expanded_scene['description'] = f"{description}. The scene unfolds with dramatic tension and visual detail."
+        
+        expanded_scene['duration'] = max(scene.get('duration', 5.0), 10.0)
+        expanded_scenes.append(expanded_scene)
+    
+    script_data['scenes'] = expanded_scenes
+    logger.info(f"Fallback script expansion completed for {len(expanded_scenes)} scenes")
+    return script_data

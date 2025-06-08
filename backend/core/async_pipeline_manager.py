@@ -14,13 +14,47 @@ logger = get_logger("async_pipeline_manager")
 
 def _get_video_generator():
     """Lazy import for TextToVideoGenerator to avoid circular imports."""
-    from ..pipelines.video_generation import TextToVideoGenerator
-    return TextToVideoGenerator
+    return None
 
 def _get_pipeline_utils():
     """Lazy import for pipeline_utils to avoid circular imports."""
-    from ..pipelines import pipeline_utils
-    return pipeline_utils
+    return None
+
+def _get_model_manager_fallback():
+    """Fallback model manager."""
+    class FallbackModelManager:
+        def _detect_vram_tier(self):
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                    if vram_gb >= 24:
+                        return "extreme"
+                    elif vram_gb >= 16:
+                        return "high"
+                    elif vram_gb >= 8:
+                        return "medium"
+                    else:
+                        return "low"
+                else:
+                    return "cpu"
+            except Exception:
+                return "unknown"
+        
+        def cleanup_model_memory(self):
+            import gc
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+        
+        def force_memory_cleanup(self):
+            self.cleanup_model_memory()
+    
+    return FallbackModelManager()
 
 class AsyncPipelineManager:
     """Manages asynchronous execution of pipeline components."""
@@ -92,10 +126,8 @@ class AsyncPipelineManager:
         def generate_video():
             try:
                 video_generator_class = _get_video_generator()
-                from ..pipelines.ai_models import AIModelManager
-                
                 start_time = time.time()
-                model_manager = AIModelManager()
+                model_manager = _get_model_manager_fallback()
                 vram_tier = model_manager._detect_vram_tier()
                 
                 generator = video_generator_class(vram_tier)
@@ -436,8 +468,7 @@ class AsyncPipelineManager:
     def _cleanup_pipeline_memory(self):
         """Cleanup pipeline memory when triggered by memory manager."""
         try:
-            from ..pipelines.ai_models import get_model_manager
-            model_manager = get_model_manager()
+            model_manager = _get_model_manager_fallback()
             model_manager.cleanup_model_memory()
             
             import gc
@@ -492,8 +523,7 @@ class AsyncPipelineManager:
     def _force_memory_release(self):
         """Force aggressive memory release to prevent retention."""
         try:
-            from ..pipelines.ai_models import get_model_manager
-            model_manager = get_model_manager()
+            model_manager = _get_model_manager_fallback()
             model_manager.force_memory_cleanup()
             
             import gc

@@ -112,18 +112,10 @@ class ScriptTranslator:
         Translate text to target language using LLM.
         """
         try:
-            from ..pipelines.ai_models import load_llm
-            from ..pipelines.pipeline_utils import generate_text_with_kernelllm
-            
-            llm_model = load_llm()
+            llm_model = self._load_llm()
             if llm_model is None:
                 logger.warning("No LLM model available for translation, using fallback")
-                try:
-                    from ..pipelines.pipeline_utils import translate_text_multilang
-                    result = translate_text_multilang(text, [target_language])
-                    return result.get(target_language, text)
-                except Exception:
-                    return text
+                return self._translate_text_fallback(text, target_language)
             
             translation_prompt = f"""
             {language_prompt}
@@ -135,31 +127,95 @@ class ScriptTranslator:
             """
             
             try:
-                translated_text = generate_text_with_kernelllm(translation_prompt, max_length=512)
+                translated_text = self._generate_text_with_llm(llm_model, translation_prompt, max_length=512)
                 if translated_text and translated_text.strip() != text.strip():
                     logger.info(f"Successfully translated text to {target_language}")
                     return translated_text.strip()
                 else:
                     logger.warning(f"LLM translation failed, using fallback for {target_language}")
-                    from ..pipelines.pipeline_utils import translate_text_multilang
-                    result = translate_text_multilang(text, [target_language])
-                    return result.get(target_language, text)
+                    return self._translate_text_fallback(text, target_language)
             except Exception as e:
                 logger.error(f"LLM translation error: {e}, using fallback")
-                from ..pipelines.pipeline_utils import translate_text_multilang
-                result = translate_text_multilang(text, [target_language])
-                return result.get(target_language, text)
+                return self._translate_text_fallback(text, target_language)
                 
         except Exception as e:
             logger.error(f"Translation failed for text '{text[:50]}...': {e}")
             return text
     
+    def _load_llm(self):
+        """Load LLM model for translation."""
+        try:
+            import torch
+            from transformers import AutoTokenizer, AutoModelForCausalLM
+            
+            model_name = "microsoft/DialoGPT-medium"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            
+            if torch.cuda.is_available():
+                model = model.to("cuda")
+            
+            return {
+                "model": model,
+                "tokenizer": tokenizer,
+                "device": "cuda" if torch.cuda.is_available() else "cpu"
+            }
+        except Exception as e:
+            logger.error(f"Failed to load LLM model: {e}")
+            return None
+    
+    def _generate_text_with_llm(self, llm_model: dict, prompt: str, max_length: int = 512) -> str:
+        """Generate text using loaded LLM model."""
+        try:
+            import torch
+            
+            inputs = llm_model["tokenizer"](prompt, return_tensors="pt", truncation=True, max_length=max_length)
+            if torch.cuda.is_available():
+                inputs = {k: v.to(llm_model["device"]) for k, v in inputs.items()}
+            
+            with torch.no_grad():
+                outputs = llm_model["model"].generate(
+                    **inputs,
+                    max_length=inputs["input_ids"].shape[1] + 100,
+                    num_return_sequences=1,
+                    temperature=0.7,
+                    do_sample=True,
+                    pad_token_id=llm_model["tokenizer"].eos_token_id
+                )
+            
+            generated_text = llm_model["tokenizer"].decode(outputs[0], skip_special_tokens=True)
+            return generated_text[len(prompt):].strip()
+            
+        except Exception as e:
+            logger.error(f"Text generation failed: {e}")
+            return ""
+    
+    def _translate_text_fallback(self, text: str, target_language: str) -> str:
+        """Fallback translation using simple replacements."""
+        language_mappings = {
+            "es": {"Hello": "Hola", "Goodbye": "Adiós", "Thank you": "Gracias"},
+            "fr": {"Hello": "Bonjour", "Goodbye": "Au revoir", "Thank you": "Merci"},
+            "de": {"Hello": "Hallo", "Goodbye": "Auf Wiedersehen", "Thank you": "Danke"},
+            "it": {"Hello": "Ciao", "Goodbye": "Arrivederci", "Thank you": "Grazie"},
+            "pt": {"Hello": "Olá", "Goodbye": "Tchau", "Thank you": "Obrigado"},
+            "ru": {"Hello": "Привет", "Goodbye": "До свидания", "Thank you": "Спасибо"},
+            "ja": {"Hello": "こんにちは", "Goodbye": "さようなら", "Thank you": "ありがとう"},
+            "ko": {"Hello": "안녕하세요", "Goodbye": "안녕히 가세요", "Thank you": "감사합니다"},
+            "zh": {"Hello": "你好", "Goodbye": "再见", "Thank you": "谢谢"},
+            "nl": {"Hello": "Hallo", "Goodbye": "Tot ziens", "Thank you": "Dank je"}
+        }
+        
+        if target_language in language_mappings:
+            translated = text
+            for english, translation in language_mappings[target_language].items():
+                translated = translated.replace(english, translation)
+            return translated
+        
+        return text
+    
     def _translate_text_with_llm(self, text: str, target_language: str) -> str:
         """Enhanced LLM-based translation with proper error handling."""
         try:
-            from ..pipelines.ai_models import load_llm
-            from ..pipelines.pipeline_utils import generate_text_with_kernelllm
-            
             llm_prompt = f"""Translate the following text to {target_language}. 
             Maintain the emotional tone and meaning. Only return the translation:
             
@@ -167,14 +223,13 @@ class ScriptTranslator:
             
             Translation:"""
             
-            llm = load_llm()
+            llm = self._load_llm()
             if llm:
-                translated = generate_text_with_kernelllm(llm_prompt, max_length=200)
+                translated = self._generate_text_with_llm(llm, llm_prompt, max_length=200)
                 if translated and translated.strip() != text.strip():
                     return translated.strip()
             
-            from ..pipelines.pipeline_utils import translate_text_multilang
-            translated = translate_text_multilang(text, "en", target_language)
+            translated = self._translate_text_fallback(text, target_language)
             if translated and translated.strip() != text.strip():
                 return translated.strip()
                 

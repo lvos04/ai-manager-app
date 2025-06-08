@@ -169,10 +169,31 @@ class ModelPreloader:
             if hasattr(self.ai_model_manager, 'load_model'):
                 return self.ai_model_manager.load_model(model_name)
             else:
-                from ..pipelines.ai_models import load_llm
-                return load_llm()
+                return self._load_llm_fallback()
         except Exception as e:
             logger.error(f"Sync model loading failed for {model_name}: {e}")
+            return None
+    
+    def _load_llm_fallback(self):
+        """Fallback LLM loading."""
+        try:
+            import torch
+            from transformers import AutoTokenizer, AutoModelForCausalLM
+            
+            model_name = "microsoft/DialoGPT-medium"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            
+            if torch.cuda.is_available():
+                model = model.to("cuda")
+            
+            return {
+                "model": model,
+                "tokenizer": tokenizer,
+                "device": "cuda" if torch.cuda.is_available() else "cpu"
+            }
+        except Exception as e:
+            logger.error(f"Failed to load LLM model: {e}")
             return None
             
     def get_preloaded_model(self, model_name: str):
@@ -245,8 +266,7 @@ class PredictiveModelLoader:
             if hasattr(self.ai_model_manager, 'load_model'):
                 return self.ai_model_manager.load_model(model_name)
             else:
-                from ..pipelines.ai_models import load_llm
-                return load_llm()
+                return self._load_llm_fallback()
         except Exception as e:
             logger.error(f"Normal model loading failed for {model_name}: {e}")
             return None
@@ -308,11 +328,27 @@ def get_model_preloader():
     """Get global model preloader instance."""
     global _predictive_loader
     if _predictive_loader is None:
-        from ..pipelines.ai_models import get_model_manager
-        ai_model_manager = get_model_manager()
+        ai_model_manager = _get_model_manager_fallback()
         _predictive_loader = PredictiveModelLoader(ai_model_manager)
         _predictive_loader.start()
     return _predictive_loader
+
+def _get_model_manager_fallback():
+    """Fallback model manager."""
+    class FallbackModelManager:
+        def load_model(self, model_name):
+            return None
+        def force_memory_cleanup(self):
+            import gc
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+    
+    return FallbackModelManager()
 
 def get_predictive_loader(ai_model_manager=None):
     """Get the global predictive loader instance."""

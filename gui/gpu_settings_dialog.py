@@ -159,13 +159,30 @@ class GPUSettingsDialog(QDialog):
             except ImportError:
                 self.cuda_status_label.setText("CUDA: PyTorch not installed")
             
-            from backend.pipelines.ai_models import AIModelManager
-            manager = AIModelManager()
-            tier = manager._detect_vram_tier()
+            tier = self._detect_vram_tier()
             self.current_tier_label.setText(f"Tier: {tier}")
             
         except Exception as e:
             self.current_gpu_label.setText(f"Detection failed: {e}")
+    
+    def _detect_vram_tier(self):
+        """Detect VRAM tier for model recommendations."""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                if vram_gb >= 24:
+                    return "extreme"
+                elif vram_gb >= 16:
+                    return "high"
+                elif vram_gb >= 8:
+                    return "medium"
+                else:
+                    return "low"
+            else:
+                return "cpu"
+        except Exception:
+            return "unknown"
 
     def auto_install_cuda(self):
         """Run automatic CUDA installation with version selection."""

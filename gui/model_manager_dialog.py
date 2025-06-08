@@ -1050,10 +1050,9 @@ class ModelManagerDialog(QDialog):
         
         try:
             from backend.model_manager import get_available_models
-            from backend.pipelines.ai_models import AIModelManager
             
             models = get_available_models()
-            model_manager = AIModelManager()
+            model_manager = self._get_model_manager_fallback()
             current_vram_tier = model_manager._detect_vram_tier()
             
             text_models = [m for m in models if m.get("model_type") == "text"]

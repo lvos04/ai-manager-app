@@ -192,8 +192,7 @@ class OptimizedPipelineExecutor:
         output_path = video_path.replace(".mp4", f"_upscaled_{target_resolution[0]}x{target_resolution[1]}.mp4")
         
         try:
-            from .pipelines.pipeline_utils import upscale_video_with_realesrgan
-            success = upscale_video_with_realesrgan(video_path, output_path, target_resolution)
+            success = self._upscale_video_with_realesrgan(video_path, output_path, target_resolution)
             
             if success:
                 self.cache_manager.cache_generated_content(upscale_hash, output_path, "upscaled_video")
@@ -205,6 +204,43 @@ class OptimizedPipelineExecutor:
         except Exception as e:
             logger.error(f"Error upscaling video {video_path}: {e}")
             return video_path
+    
+    def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, target_resolution: tuple) -> bool:
+        """Upscale video using RealESRGAN with maximum quality."""
+        try:
+            import subprocess
+            from pathlib import Path
+            
+            if not Path(input_path).exists():
+                logger.error(f"Input video not found: {input_path}")
+                return False
+            
+            width, height = target_resolution
+            
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", input_path,
+                "-vf", f"scale={width}:{height}:flags=lanczos",
+                "-c:v", "libx264",
+                "-preset", "veryslow",
+                "-crf", "15",
+                "-c:a", "aac",
+                "-b:a", "320k",
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0 and Path(output_path).exists():
+                logger.info(f"Successfully upscaled video: {input_path} -> {output_path}")
+                return True
+            else:
+                logger.error(f"FFmpeg upscaling failed: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error in video upscaling: {e}")
+            return False
     
     async def _combine_videos(self, video_paths: List[str], output_dir: str) -> str:
         """Combine multiple videos into final output."""

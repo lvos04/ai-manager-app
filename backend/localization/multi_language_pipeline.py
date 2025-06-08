@@ -254,10 +254,25 @@ class MultiLanguagePipelineManager:
             raise
         finally:
             try:
-                from ..pipelines.ai_models import get_model_manager
-                model_manager = get_model_manager()
-                model_manager.force_memory_cleanup()
+                self._force_memory_cleanup()
             except Exception as cleanup_error:
                 logger.warning(f"Memory cleanup failed: {cleanup_error}")
+    
+    def _force_memory_cleanup(self):
+        """Force memory cleanup."""
+        try:
+            import gc
+            gc.collect()
+            
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+            except ImportError:
+                pass
+                
+        except Exception as e:
+            logger.error(f"Memory cleanup error: {e}")
 
 multi_language_pipeline_manager = MultiLanguagePipelineManager()

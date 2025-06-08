@@ -30,6 +30,25 @@ except ImportError:
     API_PORT = 8000
 from backend.database import init_db
 
+def _detect_vram_tier():
+    """Detect VRAM tier for model recommendations."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            if vram_gb >= 24:
+                return "extreme"
+            elif vram_gb >= 16:
+                return "high"
+            elif vram_gb >= 8:
+                return "medium"
+            else:
+                return "low"
+        else:
+            return "cpu"
+    except Exception:
+        return "unknown"
+
 def check_cuda_on_startup():
     """Check and auto-install CUDA on application startup."""
     try:
@@ -50,25 +69,21 @@ def check_cuda_on_startup():
             logger.info(f"NVIDIA GPU detected: {gpu_name}, CUDA already available")
             
             try:
-                from backend.pipelines.ai_models import AIModelManager
-                manager = AIModelManager()
-                tier = manager._detect_vram_tier()
+                tier = _detect_vram_tier()
                 logger.info(f"GPU VRAM tier detected: {tier}")
             except Exception as e:
-                logger.warning(f"AI Model Manager GPU detection failed: {e}")
+                logger.warning(f"GPU detection failed: {e}")
         else:
             logger.info("No NVIDIA GPU detected by CUDA installer, checking AI Model Manager...")
             
             try:
-                from backend.pipelines.ai_models import AIModelManager
-                manager = AIModelManager()
-                tier = manager._detect_vram_tier()
+                tier = _detect_vram_tier()
                 if tier != "low":
-                    logger.info(f"GPU detected by AI Model Manager with tier: {tier}")
+                    logger.info(f"GPU detected with tier: {tier}")
                 else:
                     logger.info("No NVIDIA GPU detected, skipping CUDA setup")
             except Exception as e:
-                logger.warning(f"AI Model Manager GPU detection also failed: {e}")
+                logger.warning(f"GPU detection also failed: {e}")
                 logger.info("No NVIDIA GPU detected, skipping CUDA setup")
                 
     except Exception as e:
