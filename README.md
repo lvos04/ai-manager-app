@@ -80,6 +80,21 @@ The executable will be created in the `dist/AI_Project_Manager` directory.
 - `models/`: AI model storage
 - `output/`: Pipeline output directory
 
+## Example: Validate License Plate
+
+The helper function `is_valid_license_plate` in `backend/utils.py` checks
+whether a string matches the standard license plate format of three uppercase
+letters followed by four digits.
+
+```python
+from backend.utils import is_valid_license_plate
+
+if is_valid_license_plate("ABC1234"):
+    print("Valid plate")
+else:
+    print("Invalid plate")
+```
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
