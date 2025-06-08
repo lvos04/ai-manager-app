@@ -376,7 +376,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         
         print(f"Generating scene {i+1}: {scene_text[:50]}...")
         
-        char_names = ", ".join([c.get("name", "character") for c in scene_chars])
+        char_names = ", ".join([c.get("name", "character") if isinstance(c, dict) else str(c) for c in scene_chars])
         anime_prompt = f"anime scene, {scene_location}, with {char_names}, {scene_text}, detailed style, vibrant colors"
         
         scene_file = scenes_dir / f"scene_{i+1:03d}.png"
