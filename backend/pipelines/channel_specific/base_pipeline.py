@@ -262,8 +262,13 @@ class BasePipeline:
             from transformers import AutoTokenizer, AutoModelForCausalLM
             
             model_name = "microsoft/DialoGPT-medium"
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            model = AutoModelForCausalLM.from_pretrained(model_name)
+            
+            tokenizer = AutoTokenizer.from_pretrained(model_name, use_safetensors=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name, 
+                use_safetensors=True,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+            )
             
             if torch.cuda.is_available():
                 model = model.to(self.device)
@@ -273,7 +278,7 @@ class BasePipeline:
                 "tokenizer": tokenizer,
                 "device": self.device
             }
-            logger.info("LLM model loaded successfully")
+            logger.info("LLM model loaded successfully with safetensors")
             return self.models["llm"]
             
         except Exception as e:
