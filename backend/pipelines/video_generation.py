@@ -151,7 +151,6 @@ class TextToVideoGenerator:
                     "stabilityai/stable-diffusion-xl-base-1.0",
                     motion_adapter=adapter,
                     torch_dtype=dtype,
-                    device_map="auto",
                     low_cpu_mem_usage=True
                 )
             elif model_name == "animatediff_lightning":
@@ -161,7 +160,6 @@ class TextToVideoGenerator:
                 model = AnimateDiffPipeline.from_pretrained(
                     "ByteDance/AnimateDiff-Lightning",
                     torch_dtype=dtype,
-                    device_map="auto",
                     low_cpu_mem_usage=True
                 )
             elif model_name == "modelscope_t2v":
