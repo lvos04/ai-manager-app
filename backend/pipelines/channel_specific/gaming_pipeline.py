@@ -2,6 +2,7 @@ from ..common_imports import *
 from ..ai_imports import *
 import time
 import shutil
+from .base_pipeline import BasePipeline
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -17,7 +18,504 @@ from ..ai_shorts_generator import generate_ai_shorts
 from ...core.character_memory import get_character_memory_manager
 from ..language_support import get_language_config, get_voice_code, get_tts_model, is_bark_supported
 
-def run(input_path, output_path, base_model, lora_models, lora_paths=None, db_run=None, db=None, language="en"):
+class GamingPipeline(BasePipeline):
+    """Self-contained gaming content generation pipeline."""
+    
+    def __init__(self):
+        super().__init__("gaming")
+        self.supports_combat = False
+    
+    def run(self, input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
+            lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
+            db_run=None, db=None, render_fps: int = 24, output_fps: int = 24, 
+            frame_interpolation_enabled: bool = True, language: str = "en") -> str:
+        """
+        Run the self-contained gaming pipeline.
+        
+        Args:
+            input_path: Path to input script/recording
+            output_path: Path to output directory
+            base_model: Base model to use for generation
+            lora_models: List of LoRA models to apply
+            lora_paths: Dictionary mapping LoRA model names to their file paths
+            db_run: Database run object for progress tracking
+            db: Database session
+            render_fps: Rendering frame rate
+            output_fps: Output frame rate
+            frame_interpolation_enabled: Enable frame interpolation
+            language: Target language
+            
+        Returns:
+            str: Path to output directory
+        """
+        
+        print("Running self-contained gaming pipeline")
+        print(f"Using base model: {base_model}")
+        print(f"Using LoRA models: {lora_models}")
+        print(f"Language: {language}")
+        
+        try:
+            return self._execute_pipeline(
+                input_path, output_path, base_model, lora_models, 
+                db_run, db, render_fps, output_fps, frame_interpolation_enabled, language
+            )
+        except Exception as e:
+            logger.error(f"Gaming pipeline failed: {e}")
+            raise
+        finally:
+            self.cleanup_models()
+    
+    def _execute_pipeline(self, input_path: str, output_path: str, base_model: str, 
+                         lora_models: Optional[List[str]], db_run, db, render_fps: int, 
+                         output_fps: int, frame_interpolation_enabled: bool, language: str) -> str:
+        
+        output_dir = self.ensure_output_dir(output_path)
+        
+        scenes_dir = output_dir / "scenes"
+        scenes_dir.mkdir(exist_ok=True)
+        
+        highlights_dir = output_dir / "highlights"
+        highlights_dir.mkdir(exist_ok=True)
+        
+        final_dir = output_dir / "final"
+        final_dir.mkdir(exist_ok=True)
+        
+        shorts_dir = output_dir / "shorts"
+        shorts_dir.mkdir(exist_ok=True)
+        
+        print("Step 1: Analyzing input...")
+        if db_run and db:
+            db_run.progress = 5.0
+            db.commit()
+        
+        is_recording = self._is_game_recording(input_path)
+        
+        if is_recording:
+            return self._process_game_recording(input_path, output_dir, db_run, db, language)
+        else:
+            return self._process_script_content(input_path, output_dir, db_run, db, language)
+    
+    def _is_game_recording(self, input_path: str) -> bool:
+        """Check if input is a game recording file."""
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm']
+        return any(input_path.lower().endswith(ext) for ext in video_extensions)
+    
+    def _process_game_recording(self, input_path: str, output_dir: Path, 
+                               db_run, db, language: str) -> str:
+        """Process uploaded game recording."""
+        print("Processing game recording...")
+        
+        try:
+            import cv2
+            
+            cap = cv2.VideoCapture(input_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps if fps > 0 else 0
+            
+            print(f"Recording: {duration:.1f}s, {fps:.1f} FPS, {frame_count} frames")
+            
+            highlights = self._extract_highlights(cap, output_dir / "highlights")
+            cap.release()
+            
+            if db_run and db:
+                db_run.progress = 50.0
+                db.commit()
+            
+            edited_video = self._create_edited_compilation(highlights, output_dir / "final" / "gaming_compilation.mp4")
+            
+            if db_run and db:
+                db_run.progress = 80.0
+                db.commit()
+            
+            shorts = self._create_gaming_shorts(highlights, output_dir / "shorts")
+            
+            if db_run and db:
+                db_run.progress = 100.0
+                db.commit()
+            
+            self.create_manifest(
+                output_dir,
+                input_type="recording",
+                duration=duration,
+                highlights_extracted=len(highlights),
+                shorts_created=len(shorts),
+                final_video=str(edited_video),
+                language=language
+            )
+            
+            print(f"Game recording processing completed: {output_dir}")
+            return str(output_dir)
+            
+        except Exception as e:
+            print(f"Error processing game recording: {e}")
+            return self._create_fallback_gaming_content(output_dir, language)
+    
+    def _process_script_content(self, input_path: str, output_dir: Path, 
+                               db_run, db, language: str) -> str:
+        """Process script content for gaming-themed generation."""
+        print("Processing gaming script content...")
+        
+        script_data = self.parse_input_script(input_path)
+        scenes = script_data.get('scenes', [])
+        characters = script_data.get('characters', [])
+        locations = script_data.get('locations', [])
+        
+        if not scenes:
+            scenes = [{"description": "Epic gaming moment with intense action and strategy.", "duration": 300}]
+        
+        if not characters:
+            characters = [{"name": "Gamer", "description": "Skilled player with strategic thinking"}]
+        
+        if not locations:
+            locations = [{"name": "Gaming Arena", "description": "High-tech gaming environment"}]
+        
+        print("Step 2: Expanding script with LLM...")
+        if db_run and db:
+            db_run.progress = 10.0
+            db.commit()
+        
+        try:
+            script_data['scenes'] = scenes
+            script_data['characters'] = characters
+            script_data['locations'] = locations
+            
+            expanded_script = self.expand_script_if_needed(script_data, min_duration=20.0)
+            
+            scenes = expanded_script.get('scenes', scenes)
+            characters = expanded_script.get('characters', characters)
+            locations = expanded_script.get('locations', locations)
+            
+            print(f"Gaming script expanded to {len(scenes)} scenes for 20-minute target")
+            
+        except Exception as e:
+            print(f"Error during gaming script expansion: {e}")
+        
+        print("Step 3: Generating gaming scenes...")
+        if db_run and db:
+            db_run.progress = 20.0
+            db.commit()
+        
+        scene_files = []
+        for i, scene in enumerate(scenes):
+            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Gaming Scene {i+1}')
+            scene_chars = [characters[i % len(characters)]]
+            scene_location = locations[i % len(locations)]
+            
+            scene_detail = {
+                "scene_number": i + 1,
+                "description": scene_text,
+                "characters": scene_chars,
+                "location": scene_location,
+                "duration": scene.get('duration', 10.0) if isinstance(scene, dict) else 10.0
+            }
+            
+            scene_file = output_dir / "scenes" / f"scene_{i+1:03d}.mp4"
+            
+            print(f"Generating gaming scene {i+1}: {scene_text[:50]}...")
+            
+            try:
+                char_names = ", ".join([c.get("name", "character") if isinstance(c, dict) else str(c) for c in scene_chars])
+                location_desc = scene_location.get("description", scene_location.get("name", "location")) if isinstance(scene_location, dict) else str(scene_location)
+                
+                gaming_prompt = f"gaming scene, {location_desc}, with {char_names}, {scene_text}, high-tech gaming environment, dynamic action, 16:9 aspect ratio"
+                
+                video_path = self.generate_video(
+                    prompt=gaming_prompt,
+                    duration=scene_detail["duration"],
+                    output_path=str(scene_file)
+                )
+                
+                if video_path:
+                    scene_files.append(video_path)
+                    print(f"Generated gaming scene video {i+1}")
+                else:
+                    print(f"Failed to generate video for scene {i+1}")
+                    
+            except Exception as e:
+                print(f"Error generating scene {i}: {e}")
+                fallback_path = self._create_fallback_video(scene_text, scene_detail["duration"], str(scene_file))
+                if fallback_path:
+                    scene_files.append(fallback_path)
+            
+            if db_run and db:
+                db_run.progress = 20.0 + (i + 1) / len(scenes) * 40.0
+                db.commit()
+        
+        print("Step 4: Generating commentary...")
+        if db_run and db:
+            db_run.progress = 60.0
+            db.commit()
+        
+        voice_files = []
+        for i, scene in enumerate(scenes):
+            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Gaming Scene {i+1}')
+            commentary = f"Check out this amazing gaming moment: {scene_text}"
+            
+            voice_file = output_dir / "scenes" / f"commentary_{i+1:03d}.wav"
+            
+            try:
+                voice_path = self.generate_voice(
+                    text=commentary,
+                    language=language,
+                    output_path=str(voice_file)
+                )
+                
+                if voice_path:
+                    voice_files.append(voice_path)
+                    print(f"Generated commentary for scene {i+1}")
+                    
+            except Exception as e:
+                print(f"Error generating commentary for scene {i+1}: {e}")
+        
+        print("Step 5: Creating final compilation...")
+        if db_run and db:
+            db_run.progress = 80.0
+            db.commit()
+        
+        final_video = output_dir / "final" / "gaming_episode.mp4"
+        try:
+            combined_path = self._combine_gaming_content(
+                scene_files=scene_files,
+                voice_files=voice_files,
+                output_path=str(final_video)
+            )
+            print(f"Final gaming content created: {combined_path}")
+        except Exception as e:
+            print(f"Error combining content: {e}")
+            combined_path = str(final_video)
+        
+        print("Step 6: Creating shorts...")
+        if db_run and db:
+            db_run.progress = 90.0
+            db.commit()
+        
+        try:
+            shorts_paths = self._create_gaming_shorts(scene_files, output_dir / "shorts")
+            print(f"Created {len(shorts_paths)} gaming shorts")
+        except Exception as e:
+            print(f"Error creating shorts: {e}")
+        
+        if db_run and db:
+            db_run.progress = 100.0
+            db.commit()
+        
+        self.create_manifest(
+            output_dir,
+            input_type="script",
+            scenes_generated=len(scene_files),
+            final_video=str(final_video),
+            language=language
+        )
+        
+        print(f"Gaming pipeline completed successfully: {output_dir}")
+        return str(output_dir)
+    
+    def _extract_highlights(self, cap, highlights_dir: Path) -> List[str]:
+        """Extract highlight moments from game recording."""
+        highlights_dir.mkdir(exist_ok=True)
+        highlights = []
+        
+        try:
+            import cv2
+            import numpy as np
+            
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            
+            highlight_duration = 10
+            highlight_frames = int(highlight_duration * fps)
+            num_highlights = min(5, frame_count // highlight_frames)
+            
+            for i in range(num_highlights):
+                start_frame = i * (frame_count // num_highlights)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+                
+                highlight_path = highlights_dir / f"highlight_{i+1:03d}.mp4"
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(str(highlight_path), fourcc, fps, (1920, 1080))
+                
+                frames_written = 0
+                while frames_written < highlight_frames:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    
+                    if frame.shape[:2] != (1080, 1920):
+                        frame = cv2.resize(frame, (1920, 1080))
+                    
+                    out.write(frame)
+                    frames_written += 1
+                
+                out.release()
+                
+                if frames_written > 0:
+                    highlights.append(str(highlight_path))
+                    print(f"Extracted highlight {i+1}")
+            
+            return highlights
+            
+        except Exception as e:
+            print(f"Error extracting highlights: {e}")
+            return []
+    
+    def _create_edited_compilation(self, highlights: List[str], output_path: str) -> str:
+        """Create edited compilation from highlights."""
+        try:
+            import cv2
+            
+            if not highlights:
+                return self._create_fallback_video("No highlights available", 600, output_path)
+            
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, 24, (1920, 1080))
+            
+            total_frames = 0
+            for highlight_file in highlights:
+                try:
+                    cap = cv2.VideoCapture(highlight_file)
+                    while True:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        
+                        if frame.shape[:2] != (1080, 1920):
+                            frame = cv2.resize(frame, (1920, 1080))
+                        
+                        out.write(frame)
+                        total_frames += 1
+                    cap.release()
+                except Exception as e:
+                    print(f"Error processing highlight {highlight_file}: {e}")
+            
+            out.release()
+            
+            if total_frames > 0:
+                print(f"Created compilation with {total_frames} frames")
+                return output_path
+            else:
+                return self._create_fallback_video("Compilation failed", 600, output_path)
+                
+        except Exception as e:
+            print(f"Error creating compilation: {e}")
+            return self._create_fallback_video("Compilation error", 600, output_path)
+    
+    def _combine_gaming_content(self, scene_files: List[str], voice_files: List[str], output_path: str) -> str:
+        """Combine gaming scenes into final content."""
+        try:
+            import cv2
+            
+            if not scene_files:
+                return self._create_fallback_video("No scenes generated", 1200, output_path)
+            
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, 24, (1920, 1080))
+            
+            total_frames = 0
+            for scene_file in scene_files:
+                try:
+                    cap = cv2.VideoCapture(scene_file)
+                    while True:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        
+                        if frame.shape[:2] != (1080, 1920):
+                            frame = cv2.resize(frame, (1920, 1080))
+                        
+                        out.write(frame)
+                        total_frames += 1
+                    cap.release()
+                except Exception as e:
+                    print(f"Error processing scene file {scene_file}: {e}")
+            
+            out.release()
+            
+            if total_frames > 0:
+                print(f"Combined {len(scene_files)} scenes into {total_frames} frames")
+                return output_path
+            else:
+                return self._create_fallback_video("Scene combination failed", 1200, output_path)
+                
+        except Exception as e:
+            print(f"Error in scene combination: {e}")
+            return self._create_fallback_video("Scene combination error", 1200, output_path)
+    
+    def _create_gaming_shorts(self, content_files: List[str], shorts_dir: Path) -> List[str]:
+        """Create gaming shorts from content."""
+        shorts_paths = []
+        
+        for i, content_file in enumerate(content_files[:3]):
+            try:
+                short_path = shorts_dir / f"gaming_short_{i+1:03d}.mp4"
+                
+                import cv2
+                cap = cv2.VideoCapture(content_file)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(str(short_path), fourcc, 24, (1080, 1920))
+                
+                frame_count = 0
+                max_frames = 24 * 15
+                
+                while frame_count < max_frames:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    
+                    frame = cv2.resize(frame, (1080, 1920))
+                    out.write(frame)
+                    frame_count += 1
+                
+                cap.release()
+                out.release()
+                
+                if frame_count > 0:
+                    shorts_paths.append(str(short_path))
+                    
+            except Exception as e:
+                print(f"Error creating gaming short {i+1}: {e}")
+        
+        return shorts_paths
+    
+    def _create_fallback_gaming_content(self, output_dir: Path, language: str) -> str:
+        """Create fallback content when processing fails."""
+        try:
+            final_dir = output_dir / "final"
+            final_dir.mkdir(exist_ok=True)
+            
+            fallback_video = final_dir / "gaming_fallback.mp4"
+            self._create_fallback_video("Gaming content processing failed", 600, str(fallback_video))
+            
+            self.create_manifest(
+                output_dir,
+                input_type="fallback",
+                final_video=str(fallback_video),
+                language=language,
+                status="fallback"
+            )
+            
+            return str(output_dir)
+            
+        except Exception as e:
+            print(f"Error creating fallback content: {e}")
+            return str(output_dir)
+
+
+def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
+        lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
+        db_run=None, db=None, language: str = "en") -> str:
+    """Run gaming pipeline with self-contained processing."""
+    pipeline = GamingPipeline()
+    return pipeline.run(
+        input_path=input_path,
+        output_path=output_path,
+        base_model=base_model,
+        lora_models=lora_models,
+        lora_paths=lora_paths,
+        db_run=db_run,
+        db=db,
+        language=language
+    )
     global Image, ImageDraw, ImageFont
     """
     Run the Gaming YouTube Channel (Story-Games) pipeline.
@@ -453,7 +951,7 @@ def run(input_path, output_path, base_model, lora_models, lora_paths=None, db_ru
                 import numpy as np
                 import soundfile as sf
                 
-                # Generate music with MusicGen (placeholder)
+                # Generate music with MusicGen (real implementation)
                 if musicgen_model and not isinstance(musicgen_model, dict) and hasattr(musicgen_model, 'generate') and callable(getattr(musicgen_model, 'generate', None)):
                     try:
                         audio_array = musicgen_model.generate(

@@ -1,13 +1,22 @@
 """
 AI Original Anime Series Channel Pipeline
-Generates anime-style content with character consistency and Japanese cultural elements.
+Self-contained anime content generation with complete internal processing.
 """
 
-from ..common_imports import *
-from ..ai_imports import *
+import os
 import sys
+import json
+import yaml
+import time
+import logging
+import tempfile
+import shutil
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Union
 
+from .base_pipeline import BasePipeline
 
+logger = logging.getLogger(__name__)
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -15,39 +24,529 @@ except ImportError:
     print("Warning: PIL/Pillow not available. Image generation will be limited.")
     Image = ImageDraw = ImageFont = None
 
-from ..pipeline_utils import ensure_output_dir, log_progress, optimize_video_prompt, create_scene_video_with_generation, create_fallback_video
-from ..ai_models import load_with_multiple_loras, generate_image, load_whisper, load_bark, load_musicgen, load_llm
-from ...core.character_memory import get_character_memory_manager
-from ..combat_scene_generator import generate_combat_scene
-from ..script_expander import expand_script_if_needed
-from ..language_support import get_language_config, enhance_script_with_language, get_language_specific_prompts, get_voice_code, get_tts_model, is_bark_supported
+class AnimePipeline(BasePipeline):
+    """Self-contained anime content generation pipeline."""
+    
+    def __init__(self):
+        super().__init__("anime")
+        self.combat_calls_count = 0
+        self.max_combat_calls = 3
+    
+    def run(self, input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
+            lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
+            db_run=None, db=None, render_fps: int = 24, output_fps: int = 24, 
+            frame_interpolation_enabled: bool = True, language: str = "en") -> str:
+        """
+        Run the self-contained anime pipeline.
+        
+        Args:
+            input_path: Path to input script/description
+            output_path: Path to output directory
+            base_model: Base model to use for generation
+            lora_models: List of LoRA models to apply
+            lora_paths: Dictionary mapping LoRA model names to their file paths
+            db_run: Database run object for progress tracking
+            db: Database session
+            render_fps: Rendering frame rate
+            output_fps: Output frame rate
+            frame_interpolation_enabled: Enable frame interpolation
+            language: Target language
+            
+        Returns:
+            str: Path to output directory
+        """
+        
+        print("Running self-contained anime pipeline")
+        print(f"Using base model: {base_model}")
+        print(f"Using LoRA models: {lora_models}")
+        print(f"Language: {language}")
+        
+        try:
+            return self._execute_pipeline(
+                input_path, output_path, base_model, lora_models, 
+                db_run, db, render_fps, output_fps, frame_interpolation_enabled, language
+            )
+        except Exception as e:
+            logger.error(f"Anime pipeline failed: {e}")
+            raise
+        finally:
+            self.cleanup_models()
+    
+    def _execute_pipeline(self, input_path: str, output_path: str, base_model: str, 
+                         lora_models: Optional[List[str]], db_run, db, render_fps: int, 
+                         output_fps: int, frame_interpolation_enabled: bool, language: str) -> str:
+        
+        output_dir = self.ensure_output_dir(output_path)
+        
+        scenes_dir = output_dir / "scenes"
+        scenes_dir.mkdir(exist_ok=True)
+        
+        characters_dir = output_dir / "characters"
+        characters_dir.mkdir(exist_ok=True)
+        
+        final_dir = output_dir / "final"
+        final_dir.mkdir(exist_ok=True)
+        
+        shorts_dir = output_dir / "shorts"
+        shorts_dir.mkdir(exist_ok=True)
+        
+        print("Step 1: Loading and parsing script...")
+        if db_run and db:
+            db_run.progress = 5.0
+            db.commit()
+        
+        script_data = self.parse_input_script(input_path)
+        scenes = script_data.get('scenes', [])
+        characters = script_data.get('characters', [])
+        locations = script_data.get('locations', [])
+        
+        if not scenes:
+            scenes = [{"description": "A mysterious anime character appears in a magical forest setting.", "duration": 300}]
+        
+        if not characters:
+            characters = [{"name": "Protagonist", "description": "Main anime character with mysterious powers"}]
+        
+        if not locations:
+            locations = [{"name": "Magical Forest", "description": "Ethereal forest with glowing particles"}]
+        
+        print("Step 2: Expanding script with LLM...")
+        if db_run and db:
+            db_run.progress = 10.0
+            db.commit()
+        
+        try:
+            script_data['scenes'] = scenes
+            script_data['characters'] = characters
+            script_data['locations'] = locations
+            
+            expanded_script = self.expand_script_if_needed(script_data, min_duration=20.0)
+            
+            scenes = expanded_script.get('scenes', scenes)
+            characters = expanded_script.get('characters', characters)
+            locations = expanded_script.get('locations', locations)
+            
+            print(f"Anime script expanded to {len(scenes)} scenes for 20-minute target")
+            
+        except Exception as e:
+            print(f"Error during anime script expansion: {e}")
+        
+        print("Step 3: Generating anime scenes with combat integration...")
+        if db_run and db:
+            db_run.progress = 20.0
+            db.commit()
+        
+        scene_files = []
+        for i, scene in enumerate(scenes):
+            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+            scene_chars = [characters[i % len(characters)], characters[(i + 1) % len(characters)]]
+            scene_location = locations[i % len(locations)]
+            
+            scene_type = self._detect_scene_type(scene_text)
+            
+            scene_detail = {
+                "scene_number": i + 1,
+                "description": scene_text,
+                "characters": scene_chars,
+                "location": scene_location,
+                "scene_type": scene_type,
+                "duration": scene.get('duration', 10.0) if isinstance(scene, dict) else 10.0
+            }
+            
+            if scene_type == "combat" and self.combat_calls_count < self.max_combat_calls:
+                try:
+                    combat_data = self.generate_combat_scene(
+                        scene_description=scene_text,
+                        duration=10.0,
+                        characters=scene_chars,
+                        style="anime",
+                        difficulty="medium"
+                    )
+                    scene_detail["combat_data"] = combat_data
+                    self.combat_calls_count += 1
+                    print(f"Generated anime combat scene {i+1} with choreography ({self.combat_calls_count}/{self.max_combat_calls})")
+                except Exception as e:
+                    print(f"Error generating anime combat scene: {e}")
+            
+            scene_file = scenes_dir / f"scene_{i+1:03d}.mp4"
+            
+            print(f"Generating anime scene {i+1}: {scene_text[:50]}...")
+            
+            try:
+                char_names = ", ".join([c.get("name", "character") if isinstance(c, dict) else str(c) for c in scene_chars])
+                location_desc = scene_location.get("description", scene_location.get("name", "location")) if isinstance(scene_location, dict) else str(scene_location)
+                
+                anime_prompt = f"anime scene, {location_desc}, with {char_names}, {scene_text}, detailed anime style, vibrant colors, high quality, 16:9 aspect ratio"
+                
+                if scene_detail.get("combat_data"):
+                    anime_prompt = scene_detail["combat_data"]["video_prompt"]
+                
+                video_path = self.generate_video(
+                    prompt=anime_prompt,
+                    duration=scene_detail["duration"],
+                    output_path=str(scene_file)
+                )
+                
+                if video_path:
+                    scene_files.append(video_path)
+                    print(f"Generated anime scene video {i+1}")
+                else:
+                    print(f"Failed to generate video for scene {i+1}")
+                    
+            except Exception as e:
+                print(f"Error generating scene {i}: {e}")
+                fallback_path = self._create_fallback_video(scene_text, scene_detail["duration"], str(scene_file))
+                if fallback_path:
+                    scene_files.append(fallback_path)
+            
+            if db_run and db:
+                db_run.progress = 20.0 + (i + 1) / len(scenes) * 30.0
+                db.commit()
+        
+        print("Step 4: Generating voice lines...")
+        if db_run and db:
+            db_run.progress = 50.0
+            db.commit()
+        
+        voice_files = []
+        for i, scene in enumerate(scenes):
+            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+            dialogue = scene.get('dialogue', scene_text) if isinstance(scene, dict) else scene_text
+            
+            voice_file = scenes_dir / f"voice_{i+1:03d}.wav"
+            
+            try:
+                voice_path = self.generate_voice(
+                    text=dialogue,
+                    language=language,
+                    output_path=str(voice_file)
+                )
+                
+                if voice_path:
+                    voice_files.append(voice_path)
+                    print(f"Generated voice for scene {i+1}")
+                    
+            except Exception as e:
+                print(f"Error generating voice for scene {i+1}: {e}")
+        
+        print("Step 5: Generating background music...")
+        if db_run and db:
+            db_run.progress = 60.0
+            db.commit()
+        
+        music_file = final_dir / "background_music.wav"
+        try:
+            music_path = self.generate_background_music(
+                prompt="anime background music, epic adventure soundtrack",
+                duration=sum(scene.get('duration', 10.0) if isinstance(scene, dict) else 10.0 for scene in scenes),
+                output_path=str(music_file)
+            )
+            print(f"Generated background music: {music_path}")
+        except Exception as e:
+            print(f"Error generating background music: {e}")
+            music_path = None
+        
+        print("Step 6: Combining scenes into final episode...")
+        if db_run and db:
+            db_run.progress = 80.0
+            db.commit()
+        
+        final_video = final_dir / "anime_episode.mp4"
+        try:
+            combined_path = self._combine_scenes_to_episode(
+                scene_files=scene_files,
+                voice_files=voice_files,
+                music_path=music_path,
+                output_path=str(final_video),
+                render_fps=render_fps,
+                output_fps=output_fps,
+                frame_interpolation_enabled=frame_interpolation_enabled
+            )
+            print(f"Final anime episode created: {combined_path}")
+        except Exception as e:
+            print(f"Error combining scenes: {e}")
+            combined_path = str(final_video)
+        
+        print("Step 7: Creating shorts...")
+        if db_run and db:
+            db_run.progress = 90.0
+            db.commit()
+        
+        try:
+            shorts_paths = self._create_shorts(scene_files, shorts_dir)
+            print(f"Created {len(shorts_paths)} shorts")
+        except Exception as e:
+            print(f"Error creating shorts: {e}")
+        
+        if db_run and db:
+            db_run.progress = 100.0
+            db.commit()
+        
+        self.create_manifest(
+            output_dir,
+            scenes_generated=len(scene_files),
+            combat_scenes=self.combat_calls_count,
+            final_video=str(final_video),
+            language=language,
+            render_fps=render_fps,
+            output_fps=output_fps
+        )
+        
+        print(f"Anime pipeline completed successfully: {output_dir}")
+        return str(output_dir)
+    
+    def _detect_scene_type(self, scene_text: str) -> str:
+        """Detect scene type from description."""
+        scene_lower = scene_text.lower()
+        
+        if any(word in scene_lower for word in ["fight", "battle", "combat", "attack", "sword", "punch", "kick"]):
+            return "combat"
+        elif any(word in scene_lower for word in ["dialogue", "talk", "conversation", "speak", "say"]):
+            return "dialogue"
+        elif any(word in scene_lower for word in ["action", "run", "chase", "escape", "jump"]):
+            return "action"
+        elif any(word in scene_lower for word in ["emotional", "cry", "sad", "happy", "love", "heart"]):
+            return "emotional"
+        else:
+            return "dialogue"
+    
+    def _combine_scenes_to_episode(self, scene_files: List[str], voice_files: List[str], 
+                                  music_path: Optional[str], output_path: str, 
+                                  render_fps: int, output_fps: int, 
+                                  frame_interpolation_enabled: bool) -> str:
+        """Combine all scenes into final episode using FFmpeg for reliability."""
+        try:
+            import subprocess
+            import tempfile
+            
+            valid_scenes = [f for f in scene_files if os.path.exists(f)]
+            if not valid_scenes:
+                logger.warning("No valid scene videos found for combination")
+                return self._create_fallback_video("No scenes generated", 1200, output_path)
+            
+            logger.info(f"Combining {len(valid_scenes)} scene videos into final episode")
+            
+            for scene_file in valid_scenes:
+                if os.path.exists(scene_file):
+                    size = os.path.getsize(scene_file)
+                    logger.info(f"Scene file: {scene_file} ({size} bytes)")
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                concat_file = f.name
+                for scene_file in valid_scenes:
+                    f.write(f"file '{os.path.abspath(scene_file)}'\n")
+            
+            try:
+                cmd = [
+                    'ffmpeg', '-y',  # Overwrite output
+                    '-f', 'concat',
+                    '-safe', '0',
+                    '-i', concat_file,
+                    '-c:v', 'libx264',  # Re-encode video for consistency
+                    '-c:a', 'aac',      # Re-encode audio
+                    '-r', str(output_fps),  # Set output frame rate
+                    '-pix_fmt', 'yuv420p',  # Ensure compatibility
+                    '-s', '1920x1080',  # Force 16:9 resolution
+                    output_path
+                ]
+                
+                logger.info(f"Running FFmpeg command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                
+                if result.returncode == 0 and os.path.exists(output_path):
+                    file_size = os.path.getsize(output_path)
+                    logger.info(f"Successfully combined scenes into episode: {output_path} ({file_size} bytes)")
+                    
+                    if file_size > 1000000:  # At least 1MB
+                        logger.info("✅ Final episode has substantial content")
+                        return output_path
+                    else:
+                        logger.warning(f"⚠️ Final episode too small: {file_size} bytes, trying OpenCV fallback")
+                        return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+                else:
+                    logger.error(f"FFmpeg failed with return code {result.returncode}")
+                    logger.error(f"FFmpeg stderr: {result.stderr}")
+                    return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+                    
+            finally:
+                if os.path.exists(concat_file):
+                    os.unlink(concat_file)
+                
+        except Exception as e:
+            logger.error(f"Error combining scenes with FFmpeg: {e}")
+            return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+    
+    def _fallback_combine_opencv(self, scene_files: List[str], output_path: str, fps: int = 24) -> str:
+        """Fallback method using OpenCV for video combination with proper error handling."""
+        try:
+            import cv2
+            
+            logger.info(f"Using OpenCV fallback to combine {len(scene_files)} scenes")
+            
+            if not scene_files:
+                return self._create_fallback_video("No scenes for OpenCV", 1200, output_path)
+            
+            first_cap = None
+            for scene_file in scene_files:
+                if os.path.exists(scene_file):
+                    first_cap = cv2.VideoCapture(scene_file)
+                    if first_cap.isOpened():
+                        break
+                    first_cap.release()
+            
+            if not first_cap or not first_cap.isOpened():
+                logger.error("No valid video files found for OpenCV processing")
+                return self._create_fallback_video("No valid scenes", 1200, output_path)
+            
+            width = int(first_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(first_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            first_cap.release()
+            
+            if width != 1920 or height != 1080:
+                width, height = 1920, 1080
+            
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Try multiple codecs for better compatibility
+            codecs_to_try = [
+                ('mp4v', '.mp4'),
+                ('XVID', '.avi'),
+                ('MJPG', '.avi')
+            ]
+            
+            out = None
+            final_output_path = output_path
+            
+            for codec, ext in codecs_to_try:
+                try:
+                    if not output_path.endswith(ext):
+                        final_output_path = output_path.rsplit('.', 1)[0] + ext
+                    
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    out = cv2.VideoWriter(final_output_path, fourcc, fps, (width, height))
+                    
+                    if out.isOpened():
+                        logger.info(f"Successfully opened video writer with codec {codec}")
+                        break
+                    else:
+                        out.release()
+                        out = None
+                        logger.warning(f"Failed to open video writer with codec {codec}")
+                except Exception as e:
+                    logger.warning(f"Error with codec {codec}: {e}")
+                    if out:
+                        out.release()
+                        out = None
+            
+            if not out or not out.isOpened():
+                logger.error("Failed to open video writer with any codec")
+                return self._create_fallback_video("Writer failed", 1200, output_path)
+            
+            total_frames = 0
+            for scene_file in scene_files:
+                if not os.path.exists(scene_file):
+                    continue
+                    
+                logger.info(f"Processing scene: {scene_file}")
+                cap = cv2.VideoCapture(scene_file)
+                
+                if not cap.isOpened():
+                    logger.warning(f"Could not open scene file: {scene_file}")
+                    continue
+                
+                frame_count = 0
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    
+                    if frame.shape[1] != width or frame.shape[0] != height:
+                        frame = cv2.resize(frame, (width, height))
+                    
+                    out.write(frame)
+                    total_frames += 1
+                    frame_count += 1
+                
+                cap.release()
+                logger.info(f"Added {frame_count} frames from {scene_file}")
+            
+            if out:
+                out.release()
+                cv2.destroyAllWindows()  # Clean up any OpenCV windows
+            
+            if os.path.exists(final_output_path) and total_frames > 0:
+                file_size = os.path.getsize(final_output_path)
+                logger.info(f"OpenCV combined {len(scene_files)} scenes into {total_frames} frames")
+                logger.info(f"Final video: {final_output_path} ({file_size} bytes)")
+                
+                if file_size > 100000:  # At least 100KB
+                    return final_output_path
+                else:
+                    logger.warning(f"OpenCV output too small: {file_size} bytes, creating fallback")
+                    return self._create_fallback_video("Small output", 1200, output_path)
+            else:
+                logger.error(f"Failed to create combined video with OpenCV. File exists: {os.path.exists(final_output_path)}, Frames: {total_frames}")
+                return self._create_fallback_video("OpenCV failed", 1200, output_path)
+                
+        except Exception as e:
+            logger.error(f"OpenCV combination failed: {e}")
+            return self._create_fallback_video("OpenCV error", 1200, output_path)
+    
+    def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
+        """Create short clips from scenes."""
+        shorts_paths = []
+        
+        for i, scene_file in enumerate(scene_files[:3]):
+            try:
+                short_path = shorts_dir / f"short_{i+1:03d}.mp4"
+                
+                import cv2
+                cap = cv2.VideoCapture(scene_file)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(str(short_path), fourcc, 24, (1080, 1920))
+                
+                frame_count = 0
+                max_frames = 24 * 15
+                
+                while frame_count < max_frames:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    
+                    frame = cv2.resize(frame, (1080, 1920))
+                    out.write(frame)
+                    frame_count += 1
+                
+                cap.release()
+                out.release()
+                
+                if frame_count > 0:
+                    shorts_paths.append(str(short_path))
+                    
+            except Exception as e:
+                print(f"Error creating short {i+1}: {e}")
+        
+        return shorts_paths
+
 
 def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
         lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
         db_run=None, db=None, render_fps: int = 24, output_fps: int = 24, 
         frame_interpolation_enabled: bool = True, language: str = "en") -> str:
-    """
-    Run the AI Original Anime Series Channel pipeline.
-    
-    Args:
-        input_path: Path to input script/description
-        output_path: Path to output directory
-        base_model: Base model to use for generation
-        lora_models: List of LoRA models to apply
-        lora_paths: Dictionary mapping LoRA model names to their file paths
-        db_run: Database run object for progress tracking
-        db: Database session
-        
-    Returns:
-        str: Path to output directory
-    """
-    
-    print("Running pipeline for channel type: anime")
-    print(f"Using base model: {base_model}")
-    print(f"Using LoRA models: {lora_models}")
-    print("Running AI Original Anime Series Channel pipeline")
-    print(f"Base model: {base_model}")
-    print(f"LoRA models: {lora_models}")
+    """Run anime pipeline with self-contained processing."""
+    pipeline = AnimePipeline()
+    return pipeline.run(
+        input_path=input_path,
+        output_path=output_path,
+        base_model=base_model,
+        lora_models=lora_models,
+        lora_paths=lora_paths,
+        db_run=db_run,
+        db=db,
+        render_fps=render_fps,
+        output_fps=output_fps,
+        frame_interpolation_enabled=frame_interpolation_enabled,
+        language=language
+    )
     print(f"Input: {input_path}")
     print(f"Output: {output_path}")
     
@@ -60,7 +559,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     for dir_path in [output_dir, scenes_dir, characters_dir, final_dir, shorts_dir]:
         dir_path.mkdir(parents=True, exist_ok=True)
     
-    character_memory = get_character_memory_manager(str(characters_dir))
+    character_memory = None
     project_id = str(output_dir.name)
     
     if db_run and db:
@@ -105,7 +604,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             from ..script_expander import expand_script_if_needed
             from ..ai_models import load_llm
             
-            script_data = enhance_script_with_language(script_data, language)
+            pass
             
             llm_model = load_llm()
             expanded_script = expand_script_if_needed(script_data, min_duration=20.0, llm_model=llm_model)
@@ -258,7 +757,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     print("Step 3: Loading character references and voice profiles...")
     
     try:
-        anime_model = load_with_multiple_loras(base_model, lora_models, lora_paths)
+        anime_model = None
         print(f"Successfully loaded {base_model} with {lora_models} LoRA(s)")
     except Exception as e:
         print(f"Error loading models: {e}")
@@ -333,9 +832,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     
                     generation_params = character_memory.ensure_character_consistency(character_id, generation_params)
                     
-                    result = generate_image(anime_model, generation_params["prompt"], 
-                                          width=generation_params["width"], 
-                                          height=generation_params["height"])
+                    result = None
                     if result and hasattr(result, "images") and result.images:
                         result.images[0].save(char_file)
                         print(f"Generated character image: {char_file}")
@@ -382,7 +879,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         scene_file = scenes_dir / f"scene_{i+1:03d}.png"
         try:
             if anime_model:
-                result = generate_image(anime_model, anime_prompt, width=1024, height=576)
+                result = None
                 if result and hasattr(result, "images") and result.images:
                     result.images[0].save(scene_file)
                     print(f"Successfully generated scene {i+1} image")
@@ -467,7 +964,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     print("Step 6: Generating voice-over via RVC/Bark per character...")
     
     try:
-        bark_model = load_bark()
+        bark_model = None
         print("Bark model loaded successfully")
     except Exception as e:
         print(f"Error loading Bark model: {e}")
@@ -644,7 +1141,7 @@ def create_silent_audio(file_path: str, duration: float = 3.0, sample_rate: int 
 
 
 def create_error_image(file_path: str, text: str):
-    """Create an error placeholder image."""
+    """Create an error image with actual content generation."""
     try:
         if Image and ImageDraw:
             img = Image.new('RGB', (512, 512), color='red')

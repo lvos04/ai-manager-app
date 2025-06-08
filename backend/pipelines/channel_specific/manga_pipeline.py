@@ -2,6 +2,7 @@ from ..common_imports import *
 from ..ai_imports import *
 import time
 import shutil
+from .base_pipeline import BasePipeline
 
 from ..pipeline_utils import ensure_output_dir, log_progress
 from ..ai_models import load_with_multiple_loras, generate_image, load_whisper, load_bark, load_musicgen, load_llm
@@ -514,6 +515,172 @@ def run(input_path, output_path, base_model, lora_models, lora_paths=None, db_ru
     print(f"Generated {len(scenes)} scenes, {min(5, len(scenes))} shorts, and all supporting assets")
     return str(output_file)
 
+
+class MangaPipeline(BasePipeline):
+    """Self-contained manga content generation pipeline."""
+    
+    def __init__(self):
+        super().__init__("manga")
+        self.channel_type = "manga"
+        self.combat_duration = 8.0
+        self.combat_calls = 1
+    
+    def run(self, input_path, output_path, base_model="anythingv5", lora_models=None, 
+            lora_paths=None, db_run=None, db=None, render_fps=24, output_fps=24, 
+            frame_interpolation_enabled=True, language="en"):
+        """Run the manga pipeline with self-contained processing."""
+        return self._execute_pipeline(
+            input_path=input_path,
+            output_path=output_path,
+            base_model=base_model,
+            lora_models=lora_models or [],
+            lora_paths=lora_paths,
+            db_run=db_run,
+            db=db,
+            render_fps=render_fps,
+            output_fps=output_fps,
+            frame_interpolation_enabled=frame_interpolation_enabled,
+            language=language
+        )
+    
+    def _execute_pipeline(self, input_path, output_path, base_model, lora_models, 
+                         lora_paths, db_run, db, render_fps, output_fps, 
+                         frame_interpolation_enabled, language):
+        """Execute the complete manga pipeline."""
+        print("Running self-contained manga pipeline")
+        print(f"Using base model: {base_model}")
+        print(f"Using LoRA models: {lora_models}")
+        print(f"Language: {language}")
+        
+        output_dir = Path(output_path)
+        self.ensure_output_dir(output_dir)
+        
+        scenes_dir = output_dir / "scenes"
+        final_dir = output_dir / "final"
+        shorts_dir = output_dir / "shorts"
+        
+        scenes_dir.mkdir(exist_ok=True)
+        final_dir.mkdir(exist_ok=True)
+        shorts_dir.mkdir(exist_ok=True)
+        
+        print("Step 1: Loading and parsing script...")
+        script_data = self.parse_input_script(input_path)
+        
+        print("Step 2: Expanding script with LLM...")
+        expanded_script = self.expand_script_if_needed(script_data, min_duration=20.0)
+        scenes = expanded_script.get("scenes", [])
+        
+        print(f"Manga script expanded to {len(scenes)} scenes for 20-minute target")
+        
+        print("Step 3: Generating manga scenes with combat integration...")
+        scene_files = []
+        
+        for i, scene in enumerate(scenes):
+            scene_num = i + 1
+            scene_description = scene.get("description", f"Manga scene {scene_num}")
+            
+            # Generate combat scene if applicable (1 combat call for manga)
+            if i == 0:  # First scene includes combat
+                combat_data = self.generate_combat_scene(
+                    scene_description, 
+                    duration=8.0,  # 8.0s duration for manga
+                    characters=script_data.get("characters", []),
+                    style="manga"
+                )
+                print(f"Generated manga combat scene {scene_num} with martial arts (1/1)")
+            
+            print(f"Generating manga scene {scene_num}: {scene_description[:50]}...")
+            
+            enhanced_prompt = self._enhance_prompt_for_channel(scene_description)
+            scene_video = self.generate_video(enhanced_prompt, output_path=str(scenes_dir / f"scene_{scene_num:03d}.mp4"), duration=5.0)
+            
+            if scene_video and os.path.exists(scene_video):
+                scene_files.append(scene_video)
+                print(f"Generated manga scene video {scene_num}")
+            else:
+                print(f"Failed to generate manga scene video {scene_num}")
+        
+        print("Step 4: Generating manga voice lines...")
+        voice_files = []
+        for i, scene in enumerate(scenes):
+            scene_num = i + 1
+            voice_text = f"Manga scene {scene_num} narration with dramatic storytelling"
+            voice_file = self.generate_voice(voice_text, scenes_dir / f"voice_{scene_num:03d}.wav")
+            if voice_file:
+                voice_files.append(voice_file)
+                print(f"Generated manga voice for scene {scene_num}")
+        
+        print("Step 5: Generating manga soundtrack...")
+        music_file = self.generate_background_music("dramatic manga soundtrack", final_dir / "manga_soundtrack.wav")
+        if music_file:
+            print(f"Generated manga soundtrack: {music_file}")
+        
+        print("Step 6: Combining scenes into final episode...")
+        final_video = final_dir / "manga_episode.mp4"
+        
+        if scene_files:
+            combined_path = self._combine_scene_videos(scene_files, str(final_video))
+            print(f"Final manga episode created: {final_video}")
+        else:
+            print("No scene videos to combine")
+            return str(output_dir)
+        
+        print("Step 7: Creating shorts...")
+        try:
+            shorts_paths = self._create_shorts(scene_files, shorts_dir)
+            print(f"Created {len(shorts_paths)} manga shorts")
+        except Exception as e:
+            print(f"Error creating shorts: {e}")
+        
+        self.create_manifest(
+            output_dir,
+            input_type="script",
+            scenes_generated=len(scene_files),
+            final_video=str(final_video),
+            language=language
+        )
+        
+        print(f"Manga pipeline completed successfully: {output_dir}")
+        return str(output_dir)
+    
+    def _create_shorts(self, scene_files, shorts_dir):
+        """Create short-form videos from scenes."""
+        shorts_dir.mkdir(exist_ok=True)
+        shorts_paths = []
+        
+        for i, scene_file in enumerate(scene_files):
+            short_path = shorts_dir / f"manga_short_{i+1:03d}.mp4"
+            try:
+                # Create short by copying scene (simplified for now)
+                import shutil
+                shutil.copy2(scene_file, short_path)
+                shorts_paths.append(str(short_path))
+            except Exception as e:
+                print(f"Error creating short {i+1}: {e}")
+        
+        return shorts_paths
+    
+    def _get_default_scenes(self):
+        """Get default manga scenes."""
+        return [
+            "Manga panel with dramatic character close-up, black and white style",
+            "Wide shot of Japanese cityscape with manga style buildings",
+            "Action sequence with speed lines and dramatic poses",
+            "Emotional character moment with detailed facial expression",
+            "Final confrontation scene with dramatic lighting and action poses"
+        ]
+    
+    def _get_default_characters(self):
+        """Get default manga characters."""
+        return [
+            {"name": "Protagonist", "description": "Manga protagonist with distinctive hairstyle and determined expression", "voice": "determined_male"},
+            {"name": "Antagonist", "description": "Manga antagonist with menacing features and dark clothing", "voice": "menacing_male"},
+            {"name": "Support", "description": "Supporting manga character with unique design elements", "voice": "friendly_female"}
+        ]
+    
+    def _enhance_prompt_for_channel(self, prompt):
+        """Enhance prompt for manga style."""
+        return f"manga style, black and white, {prompt}, detailed panels, clean lines"
 
 def combine_scenes_to_episode(scenes_dir: Path, output_path: str, frame_interpolation_enabled: bool = True, render_fps: int = 24, output_fps: int = 24):
     """Combine scene videos into a full episode."""

@@ -10,6 +10,15 @@ from . import manga_pipeline
 from . import superhero_pipeline
 from . import original_manga_pipeline
 
+CHANNEL_PIPELINES = {
+    "gaming": gaming_pipeline.GamingPipeline,
+    "anime": anime_pipeline.AnimePipeline,
+    "marvel_dc": marvel_dc_pipeline.MarvelDCPipeline,
+    "manga": manga_pipeline.MangaPipeline,
+    "superhero": superhero_pipeline.SuperheroPipeline,
+    "original_manga": original_manga_pipeline.OriginalMangaPipeline
+}
+
 def get_pipeline_for_channel(channel_type):
     """
     Get the appropriate pipeline module for a given channel type.

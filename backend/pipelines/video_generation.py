@@ -165,8 +165,11 @@ class TextToVideoGenerator:
                 adapter = MotionAdapter.from_pretrained(
                     "guoyww/animatediff-motion-adapter-sdxl-beta",
                     torch_dtype=dtype,
+                    device_map="balanced" if torch.cuda.is_available() else None,
                     low_cpu_mem_usage=True
-                ).to(device)
+                )
+                if not torch.cuda.is_available():
+                    adapter = adapter.to("cpu")
                 if device_map:
                     model = AnimateDiffPipeline.from_pretrained(
                         "stabilityai/stable-diffusion-xl-base-1.0",
