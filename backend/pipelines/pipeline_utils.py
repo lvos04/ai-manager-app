@@ -846,8 +846,8 @@ def translate_text_multilang(text: str, target_languages: list) -> dict:
             
             try:
                 model_name = f"Helsinki-NLP/opus-mt-en-{lang_code}"
-                tokenizer = MarianTokenizer.from_pretrained(model_name)
-                model = MarianMTModel.from_pretrained(model_name)
+                tokenizer = MarianTokenizer.from_pretrained(model_name, assign=True)
+                model = MarianMTModel.from_pretrained(model_name, assign=True)
                 
                 inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                 translated = model.generate(**inputs)
@@ -895,8 +895,8 @@ def translate_text_multilang(text: str, target_languages: list) -> dict:
             if lang_code in language_mapping:
                 try:
                     model_name = language_mapping[lang_code]
-                    tokenizer = MarianTokenizer.from_pretrained(model_name)
-                    model = MarianMTModel.from_pretrained(model_name)
+                    tokenizer = MarianTokenizer.from_pretrained(model_name, assign=True)
+                    model = MarianMTModel.from_pretrained(model_name, assign=True)
                     
                     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                     translated = model.generate(**inputs)
