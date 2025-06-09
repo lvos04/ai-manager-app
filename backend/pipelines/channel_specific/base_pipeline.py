@@ -771,6 +771,36 @@ class BasePipeline:
                 "generate": self._generate_fallback_music
             }
             return self.models[model_key]
+    def _musicgen_generate_wrapper(self, model, **kwargs):
+        """Wrapper for MusicGen generation that handles tensor conversion."""
+        try:
+            prompt = kwargs.get("prompt", "")
+            duration = kwargs.get("duration", 30.0)
+            output_path = kwargs.get("output_path", "/tmp/music.wav")
+            
+            model.set_generation_params(duration=duration)
+            wav = model.generate([prompt])
+            
+            if hasattr(wav[0], 'cpu'):
+                audio_array = wav[0].cpu().numpy()
+            else:
+                audio_array = wav[0]
+            
+            import scipy.io.wavfile as wavfile
+            import numpy as np
+            sample_rate = getattr(model, 'sample_rate', 32000)
+            audio_array = audio_array.squeeze()
+            if audio_array.ndim > 1:
+                audio_array = audio_array[0]
+            audio_array = (audio_array * 32767).astype(np.int16)
+            wavfile.write(output_path, sample_rate, audio_array)
+            
+            return os.path.exists(output_path)
+        except Exception as e:
+            logger.error(f"MusicGen wrapper error: {e}")
+            return False
+
+
     
     def expand_script_if_needed(self, script_data: Dict, min_duration: float = 20.0) -> Dict:
         """Expand script to target duration using LLM."""
@@ -894,6 +924,130 @@ class BasePipeline:
             "sequences": sequences,
             "video_prompt": f"{style} style {combat_type} combat scene, {difficulty} difficulty, {duration}s duration, high quality animation"
         }
+    
+    def _process_script_with_llm(self, script_data: Dict, channel_type: str = "anime") -> Dict:
+        """Process script with LLM to create enhanced model-specific prompts."""
+        try:
+            llm_model = self.load_llm_model()
+            if not llm_model or not llm_model.get("generate"):
+                logger.warning("LLM not available, using fallback processing")
+                return self._fallback_script_processing(script_data, channel_type)
+            
+            enhanced_scenes = []
+            scenes = script_data.get('scenes', [])
+            characters = script_data.get('characters', [])
+            locations = script_data.get('locations', [])
+            
+            for i, scene in enumerate(scenes):
+                scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+                
+                analysis_prompt = f"""
+Analyze this {channel_type} scene and create detailed prompts for AI generation models.
+
+Scene: {scene_text}
+Characters: {[c.get('name', str(c)) if isinstance(c, dict) else str(c) for c in characters]}
+Locations: {[l.get('name', str(l)) if isinstance(l, dict) else str(l) for l in locations]}
+
+Create a JSON response with these fields:
+{{
+    "video_prompt": "Detailed prompt for video generation with visual elements, camera angles, lighting, style",
+    "voice_prompt": "Dialogue or narration text with emotional tone and character voice instructions", 
+    "music_prompt": "Background music description with mood, instruments, tempo, style",
+    "scene_type": "action/dialogue/exploration/combat/character_development",
+    "visual_elements": ["list", "of", "key", "visual", "components"],
+    "audio_elements": ["list", "of", "key", "audio", "components"],
+    "duration": estimated_duration_in_seconds,
+    "quality_keywords": ["keywords", "for", "maximum", "quality"]
+}}
+
+Focus on creating prompts that will generate the highest quality {channel_type} content. Be specific about visual details, character expressions, environmental elements, and audio characteristics.
+"""
+                
+                try:
+                    llm_response = llm_model["generate"](analysis_prompt, max_tokens=500)
+                    
+                    import json
+                    import re
+                    json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+                    if json_match:
+                        scene_analysis = json.loads(json_match.group())
+                        
+                        enhanced_scene = self._enhance_scene_for_channel(scene_analysis, channel_type)
+                        enhanced_scene['original_description'] = scene_text
+                        enhanced_scene['scene_number'] = i + 1
+                        enhanced_scenes.append(enhanced_scene)
+                    else:
+                        enhanced_scenes.append(self._create_fallback_scene(scene_text, i + 1, channel_type))
+                        
+                except Exception as e:
+                    logger.error(f"LLM scene analysis failed for scene {i+1}: {e}")
+                    enhanced_scenes.append(self._create_fallback_scene(scene_text, i + 1, channel_type))
+            
+            processed_script = script_data.copy()
+            processed_script['enhanced_scenes'] = enhanced_scenes
+            processed_script['llm_processed'] = True
+            
+            logger.info(f"Successfully processed {len(enhanced_scenes)} scenes with LLM")
+            return processed_script
+            
+        except Exception as e:
+            logger.error(f"Script processing with LLM failed: {e}")
+            return self._fallback_script_processing(script_data, channel_type)
+    
+    def _enhance_scene_for_channel(self, scene_analysis: Dict, channel_type: str) -> Dict:
+        """Add channel-specific enhancements to LLM scene analysis."""
+        channel_enhancements = {
+            "anime": {
+                "video_prefix": "masterpiece, best quality, ultra detailed, 8k resolution, cinematic lighting, smooth animation, professional anime style, vibrant colors, dynamic composition, ",
+                "video_suffix": ", 16:9 aspect ratio, smooth motion, professional cinematography, ultra high definition",
+                "music_style": "anime soundtrack, orchestral, emotional, "
+            },
+            "gaming": {
+                "video_prefix": "gaming footage, high action, dynamic camera, intense gameplay, ",
+                "video_suffix": ", gaming aesthetics, competitive scene",
+                "music_style": "gaming music, electronic, energetic, "
+            }
+        }
+        
+        enhancements = channel_enhancements.get(channel_type, channel_enhancements["anime"])
+        
+        if 'video_prompt' in scene_analysis:
+            scene_analysis['video_prompt'] = f"{enhancements['video_prefix']}{scene_analysis['video_prompt']}{enhancements['video_suffix']}"
+        
+        if 'music_prompt' in scene_analysis:
+            scene_analysis['music_prompt'] = f"{enhancements['music_style']}{scene_analysis['music_prompt']}"
+        
+        return scene_analysis
+    
+    def _create_fallback_scene(self, scene_text: str, scene_number: int, channel_type: str) -> Dict:
+        """Create fallback scene data when LLM processing fails."""
+        return {
+            "scene_number": scene_number,
+            "original_description": scene_text,
+            "video_prompt": f"high quality {channel_type} scene, {scene_text}",
+            "voice_prompt": scene_text,
+            "music_prompt": f"{channel_type} background music",
+            "scene_type": "default",
+            "visual_elements": ["characters", "environment"],
+            "audio_elements": ["dialogue", "background_music"],
+            "duration": 10.0,
+            "quality_keywords": ["high_quality", "detailed"]
+        }
+    
+    def _fallback_script_processing(self, script_data: Dict, channel_type: str) -> Dict:
+        """Fallback processing when LLM is not available."""
+        scenes = script_data.get('scenes', [])
+        enhanced_scenes = []
+        
+        for i, scene in enumerate(scenes):
+            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+            enhanced_scenes.append(self._create_fallback_scene(scene_text, i + 1, channel_type))
+        
+        processed_script = script_data.copy()
+        processed_script['enhanced_scenes'] = enhanced_scenes
+        processed_script['llm_processed'] = False
+        
+        return processed_script
     
     def generate_video(self, prompt: str, duration: float = 5.0, output_path: Optional[str] = None) -> Optional[str]:
         """Generate video using real AI models."""
