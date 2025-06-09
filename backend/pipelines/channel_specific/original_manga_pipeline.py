@@ -1064,7 +1064,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         db_run=None, db=None, render_fps: int = 24, output_fps: int = 60, 
         frame_interpolation_enabled: bool = True, language: str = "en") -> str:
     """Run original manga pipeline with self-contained processing."""
-    pipeline = OriginalMangaChannelPipeline()
+    pipeline = OriginalMangaChannelPipeline(output_path=output_path)
     return pipeline.run(
         input_path=input_path,
         output_path=output_path,

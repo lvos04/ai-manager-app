@@ -1031,7 +1031,7 @@ def run(input_path: str, output_path: str, base_model: str = "anythingv5",
         db_run=None, db=None, render_fps: int = 24, output_fps: int = 60, 
         frame_interpolation_enabled: bool = True, language: str = "ja") -> str:
     """Run manga pipeline with self-contained processing."""
-    pipeline = MangaChannelPipeline()
+    pipeline = MangaChannelPipeline(output_path=output_path)
     return pipeline.run(
         input_path=input_path,
         output_path=output_path,

@@ -111,6 +111,7 @@ class BasePipeline:
     
     def _enhance_prompt_for_channel(self, prompt: str) -> str:
         """Enhance prompt for specific channel style."""
+        return f"{self.channel_type} style: {prompt}"
     def _classify_scene_type(self, prompt: str) -> str:
         """Classify scene type for optimal model selection."""
         prompt_lower = prompt.lower()
@@ -609,56 +610,91 @@ class BasePipeline:
         
         try:
             if model_type == "bark":
-                import torch
-                torch.serialization.add_safe_globals([
-                    'numpy.core.multiarray.scalar',
-                    'numpy.core.multiarray._reconstruct',
-                    'numpy.ndarray',
-                    'numpy.dtype',
-                    'numpy.core.numeric',
-                    'numpy.core.multiarray.dtype'
-                ])
-                
-                import torch
-                
-                original_load = torch.load
-                def patched_load(*args, **kwargs):
-                    kwargs['weights_only'] = False
-                    return original_load(*args, **kwargs)
-                torch.load = patched_load
-                
-                from bark import SAMPLE_RATE, generate_audio, preload_models
-                logger.info(f"Loading Bark model with {self.vram_tier} VRAM optimizations")
-                preload_models()
-                
-                # Restore original torch.load
-                torch.load = original_load
-                
-                def bark_generate_wrapper(text, voice_preset="v2/en_speaker_6"):
-                    """Wrapper to handle Bark generation with proper error handling."""
+                retry_count = 0
+                max_retries = 3
+                while retry_count < max_retries:
                     try:
-                        audio_array = generate_audio(text, history_prompt=voice_preset)
-                        return audio_array, SAMPLE_RATE
+                        import torch
+                        torch.serialization.add_safe_globals([
+                            'numpy.core.multiarray.scalar',
+                            'numpy.core.multiarray._reconstruct',
+                            'numpy.ndarray',
+                            'numpy.dtype',
+                            'numpy.core.numeric',
+                            'numpy.core.multiarray.dtype'
+                        ])
+                        
+                        original_load = torch.load
+                        def patched_load(*args, **kwargs):
+                            kwargs['weights_only'] = False
+                            return original_load(*args, **kwargs)
+                        torch.load = patched_load
+                        
+                        from bark import SAMPLE_RATE, generate_audio, preload_models
+                        logger.info(f"Loading Bark model with {self.vram_tier} VRAM optimizations (attempt {retry_count + 1})")
+                        preload_models()
+                        
+                        # Restore original torch.load
+                        torch.load = original_load
+                        
+                        def bark_generate_wrapper(text, voice_preset="v2/en_speaker_6"):
+                            """Wrapper to handle Bark generation with proper error handling."""
+                            try:
+                                audio_array = generate_audio(text, history_prompt=voice_preset)
+                                return audio_array, SAMPLE_RATE
+                            except Exception as e:
+                                logger.error(f"Bark generation failed: {e}")
+                                return None, SAMPLE_RATE
+                        
+                        self.models[model_key] = {
+                            "type": "bark", 
+                            "loaded": True, 
+                            "sample_rate": SAMPLE_RATE, 
+                            "generate": bark_generate_wrapper
+                        }
+                        logger.info(f"Successfully loaded Bark model on attempt {retry_count + 1}")
+                        break
+                        
+                    except ImportError as e:
+                        logger.error(f"Bark import failed on attempt {retry_count + 1}: {e}")
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            logger.error("Failed to load Bark after all retries, using fallback")
+                            return None
                     except Exception as e:
-                        logger.error(f"Bark generation failed: {e}")
-                        return None, SAMPLE_RATE
-                
-                self.models[model_key] = {
-                    "type": "bark", 
-                    "loaded": True, 
-                    "sample_rate": SAMPLE_RATE, 
-                    "generate": bark_generate_wrapper
-                }
+                        logger.error(f"Bark loading failed on attempt {retry_count + 1}: {e}")
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            logger.error("Failed to load Bark after all retries, using fallback")
+                            return None
             elif model_type == "xtts":
-                from TTS.api import TTS
-                logger.info(f"Loading XTTS-v2 model with {self.vram_tier} VRAM optimizations")
-                gpu_enabled = self.vram_tier != "low"
-                model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=gpu_enabled)
-                self.models[model_key] = {
-                    "type": "xtts", 
-                    "model": model, 
-                    "languages": ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"]
-                }
+                retry_count = 0
+                max_retries = 3
+                while retry_count < max_retries:
+                    try:
+                        from TTS.api import TTS
+                        logger.info(f"Loading XTTS-v2 model with {self.vram_tier} VRAM optimizations (attempt {retry_count + 1})")
+                        gpu_enabled = self.vram_tier != "low"
+                        model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=gpu_enabled)
+                        self.models[model_key] = {
+                            "type": "xtts", 
+                            "model": model, 
+                            "languages": ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko"]
+                        }
+                        logger.info(f"Successfully loaded XTTS model on attempt {retry_count + 1}")
+                        break
+                    except ImportError as e:
+                        logger.error(f"XTTS import failed on attempt {retry_count + 1}: {e}")
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            logger.error("Failed to load XTTS after all retries, using fallback")
+                            return None
+                    except Exception as e:
+                        logger.error(f"XTTS loading failed on attempt {retry_count + 1}: {e}")
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            logger.error("Failed to load XTTS after all retries, using fallback")
+                            return None
             else:
                 logger.warning(f"Unknown voice model: {model_type}")
                 return None
@@ -667,7 +703,8 @@ class BasePipeline:
             return self.models[model_key]
                 
         except Exception as e:
-            logger.error(f"Failed to load voice model {model_type}: {e}")
+            logger.error(f"Critical failure loading voice model {model_type}: {e}")
+            logger.info("Attempting emergency fallback voice generation")
             self.models[model_key] = {
                 "type": "fallback",
                 "loaded": True,
@@ -683,23 +720,41 @@ class BasePipeline:
         
         try:
             if model_type == "musicgen":
-                try:
-                    from audiocraft.models import MusicGen
-                    logger.info(f"Loading MusicGen model with {self.vram_tier} VRAM optimizations")
-                    model_size = "small" if self.vram_tier in ["low", "medium"] else "medium"
-                    model = MusicGen.get_pretrained(f'facebook/musicgen-{model_size}')
-                    self.models[model_key] = {
-                        "type": "musicgen",
-                        "model": model,
-                        "generate": lambda prompt, duration: model.generate([prompt], duration=duration)
-                    }
-                except ImportError:
-                    logger.warning("audiocraft not available, using fallback music generation")
-                    self.models[model_key] = {
-                        "type": "fallback",
-                        "loaded": True,
-                        "generate": self._generate_fallback_music
-                    }
+                retry_count = 0
+                max_retries = 3
+                while retry_count < max_retries:
+                    try:
+                        from audiocraft.models import MusicGen
+                        logger.info(f"Loading MusicGen model with {self.vram_tier} VRAM optimizations (attempt {retry_count + 1})")
+                        model_size = "small" if self.vram_tier in ["low", "medium"] else "medium"
+                        model = MusicGen.get_pretrained(f'facebook/musicgen-{model_size}')
+                        self.models[model_key] = {
+                            "type": "musicgen",
+                            "model": model,
+                            "generate": lambda prompt, duration: model.generate([prompt], duration=duration)
+                        }
+                        logger.info(f"Successfully loaded MusicGen model on attempt {retry_count + 1}")
+                        break
+                    except ImportError as e:
+                        logger.error(f"audiocraft import failed on attempt {retry_count + 1}: {e}")
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            logger.error("Failed to load audiocraft after all retries, using fallback")
+                            self.models[model_key] = {
+                                "type": "fallback",
+                                "loaded": True,
+                                "generate": self._generate_fallback_music
+                            }
+                    except Exception as e:
+                        logger.error(f"MusicGen loading failed on attempt {retry_count + 1}: {e}")
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            logger.error("Failed to load MusicGen after all retries, using fallback")
+                            self.models[model_key] = {
+                                "type": "fallback", 
+                                "loaded": True,
+                                "generate": self._generate_fallback_music
+                            }
             else:
                 logger.warning(f"Unknown music model: {model_type}")
                 return None
@@ -708,7 +763,8 @@ class BasePipeline:
             return self.models[model_key]
                 
         except Exception as e:
-            logger.error(f"Failed to load music model {model_type}: {e}")
+            logger.error(f"Critical failure loading music model {model_type}: {e}")
+            logger.info("Attempting emergency fallback music generation")
             self.models[model_key] = {
                 "type": "fallback",
                 "loaded": True,
@@ -767,33 +823,12 @@ class BasePipeline:
                 if len(scene.get('description', '')) < 100:
                     prompt = f"Expand this {self.channel_type} scene with more detail: {scene.get('description', '')}"
                     
-                    inputs = llm["tokenizer"](prompt, return_tensors="pt", truncation=True, max_length=512)
-                    if torch.cuda.is_available():
-                        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                    
-                    with torch.no_grad():
-                        try:
-                            outputs = llm["model"].generate(
-                                **inputs,
-                                max_new_tokens=128,  # Reduced from max_length=200
-                                temperature=0.7,
-                                do_sample=True,
-                                pad_token_id=llm["tokenizer"].eos_token_id,
-                                early_stopping=True,
-                                num_beams=1  # Faster generation
-                            )
-                        except Exception as e:
-                            logger.warning(f"LLM generation failed for scene, using fallback: {e}")
-                            expanded_scene['description'] = f"Enhanced {scene.get('description', 'scene')} with detailed character interactions and dynamic action sequences"
-                            continue
-                    
-                    expanded_text = llm["tokenizer"].decode(outputs[0], skip_special_tokens=True)
-                    if expanded_text.startswith(prompt):
-                        expanded_text = expanded_text[len(prompt):].strip()
-                    
-                    if len(expanded_text) > 20:
-                        expanded_scene['description'] = expanded_text
+                    expanded_text = llm["generate"](prompt, max_tokens=100)
+                    if expanded_text and len(expanded_text.strip()) > 0:
+                        scene['description'] = expanded_text.strip()
                         expanded_scene['duration'] = max(scene.get('duration', 5.0) * 1.5, 8.0)
+                    else:
+                        scene['description'] = f"Enhanced {scene.get('description', 'scene')} with detailed character interactions and dynamic action sequences"
                 
                 expanded_scenes.append(expanded_scene)
             
@@ -1338,7 +1373,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             logger.error(f"Fallback video creation failed: {e}")
             return output_path
     
-    def generate_voice(self, text: str, character_voice: str = "default", output_path: str = None, language: str = "en") -> str:
+    def generate_voice(self, text: str, character_voice: str = "default", output_path: str = "", language: str = "en") -> str:
         """Generate voice audio using real AI models."""
         try:
             from ..ai_voice_generator import AIVoiceGenerator
@@ -1377,6 +1412,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         try:
             import numpy as np
             import scipy.io.wavfile as wavfile
+            import time
             
             if not output_path:
                 output_path = f"fallback_audio_{int(time.time())}.wav"
@@ -1397,36 +1433,9 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Fallback audio creation failed: {e}")
-    def _create_fallback_audio(self, text: str, output_path: str) -> str:
-        """Create fallback audio when AI generation fails."""
-        try:
-            import numpy as np
-            import scipy.io.wavfile as wavfile
-            
-            if not output_path:
-                output_path = f"fallback_audio_{int(time.time())}.wav"
-            
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            duration = max(len(text) * 0.1, 2.0)
-            sample_rate = 22050
-            samples = int(duration * sample_rate)
-            
-            silence = np.zeros(samples, dtype=np.int16)
-            
-            wavfile.write(output_path, sample_rate, silence)
-            
-            logger.warning(f"Created fallback silent audio: {output_path}")
-            return output_path
-            
-        except Exception as e:
-            logger.error(f"Error creating fallback audio: {e}")
-            return output_path
-
-
             return output_path
     
-    def generate_background_music(self, scene_description: str, duration: float = 30.0, output_path: str = None, scene_type: str = "default") -> str:
+    def generate_background_music(self, scene_description: str, duration: float = 30.0, output_path: str = "", scene_type: str = "default") -> str:
         """Generate background music using real AI models."""
         try:
             from ..ai_music_generator import AIMusicGenerator
@@ -1460,7 +1469,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             logger.error(f"Error in AI music generation: {e}")
             return self._create_fallback_music(scene_description, duration, output_path)
     
-    def _create_fallback_music(self, description: str, duration: float = 30.0, output_path: str = None) -> str:
+    def _create_fallback_music(self, description: str, duration: float = 30.0, output_path: str = "") -> str:
         """Create fallback background music."""
         try:
             import numpy as np
@@ -1774,6 +1783,9 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
     
     def create_manifest(self, output_dir: Path, **kwargs) -> str:
         """Create manifest file with pipeline results."""
+        import json
+        import time
+        
         manifest = {
             "channel_type": self.channel_type,
             "timestamp": time.time(),
@@ -1786,6 +1798,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         with open(manifest_file, 'w') as f:
             json.dump(manifest, f, indent=2)
         
+        return str(manifest_file)
     
     def generate_youtube_metadata(self, scenes: List[Dict], output_dir: Path, language: str = "en") -> Dict:
         """Generate YouTube metadata including title, description, and tags."""
