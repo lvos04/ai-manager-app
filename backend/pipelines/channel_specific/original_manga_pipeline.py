@@ -703,8 +703,23 @@ class OriginalMangaChannelPipeline(BasePipeline):
             logger.error(f"Error in scene video generation: {e}")
             return self._create_fallback_video(scene_description, duration, output_path)
     
-    def _optimize_video_prompt(self, prompt: str, channel_type: str) -> str:
+    def _optimize_video_prompt(self, prompt: str, channel_type: str = "original_manga", model_name: str = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
+        from backend.model_manager import BASE_MODEL_PROMPT_TEMPLATES
+        
+        if model_name and model_name in BASE_MODEL_PROMPT_TEMPLATES:
+            template = BASE_MODEL_PROMPT_TEMPLATES[model_name]
+            
+            if "structure" in template and model_name in ["anything_xl", "aam_xl_animemix"]:
+                quality = "masterpiece, best quality"
+                year = "newest"
+                optimized_prompt = f"{quality}, {year}, original manga style, {prompt}"
+            else:
+                optimized_prompt = f"{template['prefix']}, original manga style, {prompt}"
+            
+            suffix = ", 16:9 aspect ratio, smooth motion, professional cinematography, ultra high definition"
+            return f"{optimized_prompt}{suffix}"
+        
         optimizations = {
             "original_manga": "masterpiece, best quality, ultra detailed, 8k resolution, cinematic lighting, smooth animation, professional original manga style, unique art style, detailed illustration, vibrant colors, dynamic composition, "
         }

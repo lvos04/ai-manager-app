@@ -583,7 +583,71 @@ BASE_MODELS = {
     }
 }
 
+BASE_MODEL_PROMPT_TEMPLATES = {
+    "anythingv5": {
+        "prefix": "masterpiece, best quality, ultra detailed, 8k resolution, cinematic lighting, smooth animation, professional anime style",
+        "negative": "nsfw, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name"
+    },
+    "anything_xl": {
+        "prefix": "masterpiece, best quality, newest, anime style",
+        "structure": "<|quality|>, <|year|>, <|characters|>, <|tags|>",
+        "negative": "nsfw, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name"
+    },
+    "counterfeitv3": {
+        "prefix": "masterpiece, best quality, detailed anime art, vibrant colors, professional illustration",
+        "negative": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
+    },
+    "absolutereality": {
+        "prefix": "photorealistic, highly detailed, professional photography, 8k uhd, realistic lighting, sharp focus",
+        "negative": "cartoon, anime, painting, drawing, illustration, low quality, blurry, out of focus"
+    },
+    "deliberate": {
+        "prefix": "highly detailed, photorealistic, professional quality, cinematic lighting, sharp focus",
+        "negative": "cartoon, anime, low quality, blurry, distorted, deformed"
+    },
+    "stable_diffusion_1_5": {
+        "prefix": "high quality, detailed, professional, sharp focus",
+        "negative": "low quality, blurry, distorted, deformed, bad anatomy"
+    },
+    "stable_diffusion_xl": {
+        "prefix": "masterpiece, best quality, ultra detailed, 8k uhd, professional quality, sharp focus",
+        "negative": "low quality, blurry, distorted, deformed, bad anatomy, worst quality"
+    },
+    "dreamshaper": {
+        "prefix": "masterpiece, best quality, highly detailed, professional art, vibrant colors, sharp focus",
+        "negative": "low quality, blurry, distorted, deformed, bad anatomy, worst quality, jpeg artifacts"
+    },
+    "kenshi": {
+        "prefix": "masterpiece, best quality, ultra detailed, anime style, professional illustration, vibrant colors",
+        "negative": "nsfw, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
+    },
+    "aam_xl_animemix": {
+        "prefix": "masterpiece, best quality, newest, detailed anime art, professional illustration, 8k resolution",
+        "structure": "<|quality|>, <|year|>, <|characters|>, <|tags|>",
+        "negative": "nsfw, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name"
+    },
+    "mistoon": {
+        "prefix": "masterpiece, best quality, detailed anime art, arcane style, professional illustration, vibrant colors",
+        "negative": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
+    },
+    "meina_mix": {
+        "prefix": "masterpiece, best quality, ultra detailed, anime style, professional illustration, cinematic lighting",
+        "negative": "nsfw, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
+    },
+    "orange_mix": {
+        "prefix": "masterpiece, best quality, vibrant colors, dynamic lighting, anime style, professional illustration",
+        "negative": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
+    }
+}
+
 CIVITAI_LORA_MODELS = {
+    "anything_xl": {
+        "model_id": "9409",
+        "version_id": "384264",
+        "name": "万象熔炉 | Anything XL",
+        "description": "Advanced SDXL anime model with structured prompt support. Best for: high-quality anime art with modern styles.",
+        "channel_compatibility": ["anime", "manga", "original_manga"]
+    },
     "RealisticVisionV5_LoRA": {"model_id": "4201", "version_id": "501240"},  # Realistic Vision V6.0 B1
     "EpicPhotographicLoRA": {"model_id": "29460", "version_id": "98028"},  # Epic Photographic Style
     "Cinematic-Lighting-LoRA": {"model_id": "98374", "version_id": "117829"},  # Cinematic Lighting Style
@@ -731,6 +795,7 @@ HF_MODEL_REPOS = {
     "scene_detection_v2": "microsoft/DialoGPT-medium",
     "upscaler_real_esrgan": "ai-forever/Real-ESRGAN",
     "realesrgan": "ai-forever/Real-ESRGAN",
+    "realesrgan_anime": "ai-forever/Real-ESRGAN",
     # Additional models
     "Deepseek Llama 8B PEFT v5": "Kenazin/Deepseek-Llama-8B-peft-p-ver5",
     "Deepseek R1": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
@@ -1518,68 +1583,71 @@ def download_from_civitai(model_name: str, model_dir: Path, db_model, db: Sessio
     
     return False
 
-def download_from_huggingface(model_name: str, model_type: str, model_dir: Path, db_model, db: Session, hf_token: Optional[str], version: str):
-    """Download model from HuggingFace."""
-    try:
-        from huggingface_hub import hf_hub_download, login, HfFolder, HfApi
-        
-        # Determine repository
-        repo_id = HF_MODEL_REPOS.get(model_name)
-        if not repo_id:
-            raise Exception(f"No HuggingFace repository found for {model_name}")
-        
-        if hf_token:
-            login(token=hf_token)
-            logger.info(f"Authenticated with HuggingFace using provided token")
-        elif HfFolder.get_token():
-            logger.info(f"Using existing HuggingFace authentication")
-        else:
-            logger.warning(f"No HuggingFace token provided - attempting anonymous download")
-        
-        # Determine filename based on model type
-        api = HfApi()
-        files = api.list_repo_files(repo_id)
-        
-        extensions = ['.safetensors', '.ckpt', '.bin', '.pt', '.pth']
-        model_files = [f for f in files if any(f.endswith(ext) for ext in extensions)]
-        
-        if not model_files:
-            raise Exception(f"No model files found in repository {repo_id}")
-        
-        # Choose the first model file
-        filename = model_files[0]
-        
-        logger.info(f"Downloading {model_name} from {repo_id}, file: {filename}")
-        
-        downloaded_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            local_dir=str(model_dir),
-            local_dir_use_symlinks=False
-        )
-        
-        # Update database with successful download
-        db_model.downloaded = True
-        db_model.download_path = str(model_dir)
-        db_model.size_mb = os.path.getsize(downloaded_path) / (1024 * 1024)
-        db_model.version = version
-        db.commit()
-        
-        logger.info(f"{model_type.title()} model {model_name} downloaded successfully from HuggingFace")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error downloading model from HuggingFace: {str(e)}")
-        
-        error_file = model_dir / "download_error.txt"
-        with open(error_file, "w") as f:
-            f.write(f"Download failed for {model_name} {model_type} model: {str(e)}")
-        
-        # Update model info with error status
-        db_model.downloaded = False
-        db_model.download_path = str(model_dir)
-        db_model.version = version
-        db.commit()
-        
-        logger.error(f"Failed to download {model_type} model {model_name} - see error log for details")
-        return False
+def download_from_huggingface(model_name: str, model_type: str, model_dir: Path, db_model, db: Session, hf_token: Optional[str], version: str, max_retries: int = 3, timeout: int = 120):
+    """Download model from HuggingFace with retry logic and extended timeout."""
+    import time
+    
+    for attempt in range(max_retries):
+        try:
+            from huggingface_hub import hf_hub_download, login, HfFolder, HfApi
+            
+            repo_id = HF_MODEL_REPOS.get(model_name)
+            if not repo_id:
+                raise Exception(f"No HuggingFace repository found for {model_name}")
+            
+            if hf_token:
+                login(token=hf_token)
+                logger.info(f"Authenticated with HuggingFace using provided token")
+            elif HfFolder.get_token():
+                logger.info(f"Using existing HuggingFace authentication")
+            else:
+                logger.warning(f"No HuggingFace token provided - attempting anonymous download")
+            
+            api = HfApi()
+            files = api.list_repo_files(repo_id)
+            
+            extensions = ['.safetensors', '.ckpt', '.bin', '.pt', '.pth']
+            model_files = [f for f in files if any(f.endswith(ext) for ext in extensions)]
+            
+            if not model_files:
+                raise Exception(f"No model files found in repository {repo_id}")
+            
+            filename = model_files[0]
+            
+            logger.info(f"Downloading {model_name} from {repo_id}, file: {filename} (attempt {attempt + 1}/{max_retries})")
+            
+            downloaded_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                local_dir=str(model_dir),
+                local_dir_use_symlinks=False,
+                timeout=timeout
+            )
+            
+            db_model.downloaded = True
+            db_model.download_path = str(model_dir)
+            db_model.size_mb = os.path.getsize(downloaded_path) / (1024 * 1024)
+            db_model.version = version
+            db.commit()
+            
+            logger.info(f"{model_type.title()} model {model_name} downloaded successfully from HuggingFace")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error downloading model from HuggingFace (attempt {attempt + 1}): {str(e)}")
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 15
+                logger.info(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                error_file = model_dir / "download_error.txt"
+                with open(error_file, "w") as f:
+                    f.write(f"Download failed for {model_name} {model_type} model after {max_retries} attempts: {str(e)}")
+                
+                db_model.downloaded = False
+                db_model.download_path = str(model_dir)
+                db_model.version = version
+                db.commit()
+                
+                logger.error(f"Failed to download {model_type} model {model_name} after {max_retries} attempts - see error log for details")
+                return False

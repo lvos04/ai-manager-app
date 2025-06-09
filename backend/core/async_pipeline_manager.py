@@ -149,9 +149,45 @@ class AsyncPipelineManager:
                 "processing_time": time.time() - start_time
             }
     
-    async def execute_pipeline_async(self, scenes, pipeline_config):
-        """Execute pipeline asynchronously with scenes and config."""
-        return await self.run_pipeline(scenes, pipeline_config)
+    async def execute_pipeline_async(self, project_data):
+        """Execute pipeline asynchronously with proper error handling."""
+        try:
+            logger.info("Starting async pipeline execution")
+            
+            channel_type = project_data.get('channel_type', 'anime')
+            
+            if channel_type == 'anime':
+                from backend.pipelines.channel_specific.anime_pipeline import AnimePipeline
+                pipeline = AnimePipeline()
+            elif channel_type == 'gaming':
+                from backend.pipelines.channel_specific.gaming_pipeline import GamingPipeline
+                pipeline = GamingPipeline()
+            elif channel_type == 'manga':
+                from backend.pipelines.channel_specific.manga_pipeline import MangaPipeline
+                pipeline = MangaPipeline()
+            elif channel_type == 'marvel_dc':
+                from backend.pipelines.channel_specific.marvel_dc_pipeline import MarvelDCPipeline
+                pipeline = MarvelDCPipeline()
+            elif channel_type == 'superhero':
+                from backend.pipelines.channel_specific.superhero_pipeline import SuperheroPipeline
+                pipeline = SuperheroPipeline()
+            elif channel_type == 'original_manga':
+                from backend.pipelines.channel_specific.original_manga_pipeline import OriginalMangaPipeline
+                pipeline = OriginalMangaPipeline()
+            else:
+                from backend.pipelines.channel_specific.base_pipeline import BasePipeline
+                pipeline = BasePipeline()
+            
+            result = await pipeline.execute_async(project_data)
+            
+            logger.info("Async pipeline execution completed successfully")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Async pipeline execution failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 def _get_pipeline_utils():
     """Inline pipeline utilities to replace pipeline_utils."""
