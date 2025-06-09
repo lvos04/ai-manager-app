@@ -465,23 +465,42 @@ class GamingChannelPipeline(BasePipeline):
         shorts_paths = []
         
         try:
+            shorts_dir.mkdir(parents=True, exist_ok=True)
+            
             main_video_path = None
-            for scene_file in scene_files:
-                if "final" in str(scene_file) or "episode" in str(scene_file):
-                    main_video_path = scene_file
+            potential_paths = [
+                self.output_path / "final" / "gaming_compilation.mp4",
+                self.output_path / "final" / "gaming_episode.mp4",
+                self.output_path / "final" / "temp_combined.mp4"
+            ]
+            
+            for potential_path in potential_paths:
+                if potential_path.exists() and potential_path.stat().st_size > 1000:
+                    main_video_path = str(potential_path)
+                    logger.info(f"Found main video for shorts: {main_video_path}")
                     break
             
-            if not main_video_path and scene_files:
-                main_video_path = scene_files[0]
+            if not main_video_path:
+                for scene_file in scene_files:
+                    if os.path.exists(scene_file) and os.path.getsize(scene_file) > 1000:
+                        main_video_path = scene_file
+                        logger.info(f"Using scene file for shorts: {main_video_path}")
+                        break
             
             if not main_video_path:
-                logger.warning("No main video found for shorts generation")
-                return shorts_paths
+                logger.warning("No suitable video found for shorts extraction")
+                return []
             
             highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
             
+            if not highlights:
+                logger.warning("No highlights extracted from main video")
+                return []
+            
+            logger.info(f"Extracted {len(highlights)} highlights for shorts creation")
+            
             for i, highlight in enumerate(highlights):
-                short_path = shorts_dir / f"short_{i+1:03d}.mp4"
+                short_path = shorts_dir / f"gaming_short_{i+1:02d}.mp4"
                 
                 short_data = self.create_short_from_highlight(
                     main_video_path,
@@ -490,14 +509,20 @@ class GamingChannelPipeline(BasePipeline):
                     i + 1
                 )
                 
-                if short_data:
+                if short_data and os.path.exists(str(short_path)):
                     shorts_paths.append(str(short_path))
-                    logger.info(f"Created {self.channel_type} short {i+1}: {short_data['title']}")
-                    
+                    logger.info(f"Created gaming short {i+1}: {short_data.get('title', 'Untitled')}")
+                else:
+                    logger.warning(f"Failed to create short {i+1}")
+            
+            logger.info(f"Successfully created {len(shorts_paths)} gaming shorts")
+            return shorts_paths
+            
         except Exception as e:
-            logger.error(f"Error creating {self.channel_type} shorts: {e}")
-        
-        return shorts_paths
+            logger.error(f"Error creating gaming shorts: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     def _create_fallback_gaming_content(self, output_dir: Path, language: str) -> str:
         """Create fallback content when processing fails."""
@@ -1481,3 +1506,5 @@ Created with advanced AI technology for gaming content."""
     print(f"Gaming YouTube Channel pipeline complete. Output saved to {output_file}")
     print(f"Generated {len(scenes)} scenes, {min(5, len(scenes))} shorts, and all supporting assets")
     return str(output_file)
+
+GamingPipeline = GamingChannelPipeline

@@ -40,6 +40,10 @@ accelerate>=0.20.0
 
 # Audio/Video processing
 bark==0.1.5
+audiocraft>=1.0.0
+diffusers>=0.21.0
+transformers>=4.30.0
+accelerate>=0.20.0
 
 # TTS>=0.22.0  # Not compatible with Python 3.12 (requires <3.12)
 # Install manually if needed for TTS functionality: pip install TTS==0.21.3 --only-binary=all
