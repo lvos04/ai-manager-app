@@ -448,24 +448,47 @@ class AnimeChannelPipeline(BasePipeline):
                     f.write(f"file '{os.path.abspath(scene_file)}'\n")
             
             try:
-                cmd = [
-                    'ffmpeg', '-y',  # Overwrite output
-                    '-f', 'concat',
-                    '-safe', '0',
-                    '-i', concat_file,
+                cmd = ['ffmpeg', '-y']  # Overwrite output
+                
+                cmd.extend(['-f', 'concat', '-safe', '0', '-i', concat_file])
+                
+                if music_path and os.path.exists(music_path):
+                    cmd.extend(['-i', music_path])
+                    logger.info(f"Adding background music: {music_path}")
+                
+                valid_voice_files = [f for f in voice_files if f and os.path.exists(f)]
+                for voice_file in valid_voice_files:
+                    cmd.extend(['-i', voice_file])
+                    logger.info(f"Adding voice track: {voice_file}")
+                
+                cmd.extend([
                     '-c:v', 'libx264',  # High quality codec
                     '-preset', 'veryslow',  # Maximum quality preset
                     '-crf', '15',  # High quality CRF
                     '-profile:v', 'high',
                     '-level', '4.1',
-                    '-c:a', 'aac',
-                    '-b:a', '320k',  # High quality audio bitrate
                     '-r', str(output_fps),  # Set output frame rate
                     '-pix_fmt', 'yuv420p',  # Ensure compatibility
                     '-s', '1920x1080',  # Force 16:9 resolution
+                ])
+                
+                if music_path and os.path.exists(music_path) and valid_voice_files:
+                    filter_complex = f"[1:a]volume=0.3[bg];[2:a]volume=1.0[voice];[bg][voice]amix=inputs=2:duration=first:dropout_transition=2[audio]"
+                    cmd.extend(['-filter_complex', filter_complex, '-map', '0:v', '-map', '[audio]'])
+                elif music_path and os.path.exists(music_path):
+                    cmd.extend(['-map', '0:v', '-map', '1:a', '-filter:a', 'volume=0.4'])
+                elif valid_voice_files:
+                    cmd.extend(['-map', '0:v', '-map', '1:a'])
+                else:
+                    cmd.extend(['-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000', '-map', '0:v', '-map', '1:a', '-shortest'])
+                
+                cmd.extend([
+                    '-c:a', 'aac',
+                    '-b:a', '320k',  # High quality audio bitrate
+                    '-ar', '48000',  # Sample rate
                     '-movflags', '+faststart',  # Optimize for streaming
                     output_path
-                ]
+                ])
                 
                 logger.info(f"Running FFmpeg command: {' '.join(cmd)}")
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -675,29 +698,38 @@ class AnimeChannelPipeline(BasePipeline):
             return []
     
     def _expand_script_if_needed(self, script_data: Dict, min_duration: float = 20.0) -> Dict:
-        """Expand script if it doesn't meet minimum duration requirements."""
+        """Expand script if it doesn't meet minimum duration requirements for complete anime episodes."""
         current_duration = self._analyze_script_duration(script_data)
-        if current_duration >= min_duration:
-            logger.info(f"Script duration {current_duration:.1f} minutes meets minimum requirement")
+        existing_scenes = script_data.get("scenes", [])
+        
+        # Ensure minimum 5-8 scenes for complete anime episode experience
+        min_scenes = 5
+        max_scenes = 8
+        target_scenes = max(min_scenes, min(max_scenes, len(existing_scenes) + 3))
+        
+        if len(existing_scenes) >= target_scenes and current_duration >= min_duration:
+            logger.info(f"Script has {len(existing_scenes)} scenes with {current_duration:.1f} minutes - meets requirements")
             return script_data
         
-        logger.info(f"Script duration {current_duration:.1f} minutes is below minimum {min_duration} minutes. Expanding...")
+        logger.info(f"Expanding script from {len(existing_scenes)} to {target_scenes} scenes for complete anime episode")
         
-        needed_duration = min_duration - current_duration
-        scenes_to_add = int(needed_duration / 2.5) + 1
-        
-        existing_scenes = script_data.get("scenes", [])
         characters = script_data.get("characters", [])
         setting = script_data.get("setting", "anime world")
         
-        expansion_types = ["character_development", "world_building", "action_expansion", "emotional_beats"]
+        expansion_types = [
+            "opening_sequence", "character_development", "world_building", 
+            "action_expansion", "emotional_beats", "plot_twist", 
+            "climax_buildup", "resolution"
+        ]
         
+        scenes_to_add = target_scenes - len(existing_scenes)
         for i in range(scenes_to_add):
             expansion_type = expansion_types[i % len(expansion_types)]
             new_scene = self._generate_expansion_scene(expansion_type, characters, setting, i + len(existing_scenes) + 1)
             existing_scenes.append(new_scene)
         
         script_data["scenes"] = existing_scenes
+        logger.info(f"Expanded script to {len(existing_scenes)} scenes for complete anime episode")
         return script_data
     
     def _analyze_script_duration(self, script_data: Dict) -> float:
@@ -723,32 +755,73 @@ class AnimeChannelPipeline(BasePipeline):
         return total_duration
     
     def _generate_expansion_scene(self, expansion_type: str, characters: List, setting: str, scene_number: int) -> Dict:
-        """Generate a new scene for expansion."""
+        """Generate a new scene for expansion with enhanced variety for complete anime episodes."""
         main_char = characters[0] if characters else {"name": "Protagonist"}
+        support_char = characters[1] if len(characters) > 1 else {"name": "Ally"}
         
-        if expansion_type == "character_development":
+        if expansion_type == "opening_sequence":
+            return {
+                "type": "opening",
+                "description": f"Dynamic anime opening sequence showcasing {main_char.get('name', 'the protagonist')} and the world of {setting}. Features sweeping camera movements, character introductions, and thematic music.",
+                "duration": 3.5,
+                "music_prompt": "epic anime opening theme, orchestral, heroic",
+                "voice_prompt": f"Narrator introduces the world and {main_char.get('name', 'protagonist')}"
+            }
+        elif expansion_type == "character_development":
             return {
                 "type": "character_development",
-                "description": f"Character development scene featuring {main_char.get('name', 'the protagonist')} in {setting}. This scene explores their background, motivations, and personal growth.",
-                "duration": 3.0
+                "description": f"Deep character development scene featuring {main_char.get('name', 'the protagonist')} in {setting}. Explores their past, inner conflicts, and growth through meaningful dialogue and flashbacks.",
+                "duration": 4.0,
+                "music_prompt": "emotional anime soundtrack, piano, strings",
+                "voice_prompt": f"{main_char.get('name', 'protagonist')} reflects on their journey and motivations"
             }
         elif expansion_type == "world_building":
             return {
                 "type": "world_building", 
-                "description": f"World building scene showcasing the rich details of {setting}. This scene establishes the world's rules, culture, and atmosphere in anime style.",
-                "duration": 2.5
+                "description": f"Immersive world building scene showcasing the intricate details of {setting}. Establishes lore, culture, magic systems, and societal structures with stunning anime visuals.",
+                "duration": 3.0,
+                "music_prompt": "mystical anime ambience, ethereal, world music",
+                "voice_prompt": f"Exploration of {setting} and its unique characteristics"
             }
         elif expansion_type == "action_expansion":
             return {
                 "type": "combat",
-                "description": f"Intense anime-style combat scene in {setting} featuring dynamic action and choreography.",
-                "duration": 3.0
+                "description": f"Spectacular anime-style combat scene in {setting} featuring {main_char.get('name', 'protagonist')} vs formidable opponents. Dynamic choreography, special attacks, and intense battle sequences.",
+                "duration": 4.5,
+                "music_prompt": "intense anime battle music, rock, orchestral",
+                "voice_prompt": f"Battle cries and combat dialogue between {main_char.get('name', 'protagonist')} and enemies"
+            }
+        elif expansion_type == "plot_twist":
+            return {
+                "type": "plot_twist",
+                "description": f"Shocking plot twist scene that changes everything for {main_char.get('name', 'the protagonist')} in {setting}. Reveals hidden truths, betrayals, or unexpected alliances.",
+                "duration": 3.5,
+                "music_prompt": "dramatic anime revelation music, suspenseful, orchestral",
+                "voice_prompt": f"Dramatic revelation dialogue between {main_char.get('name', 'protagonist')} and {support_char.get('name', 'ally')}"
+            }
+        elif expansion_type == "climax_buildup":
+            return {
+                "type": "climax_buildup",
+                "description": f"Tension-building scene leading to the climax. {main_char.get('name', 'The protagonist')} prepares for the final confrontation in {setting} with mounting stakes and emotional weight.",
+                "duration": 3.0,
+                "music_prompt": "building anime tension music, crescendo, epic",
+                "voice_prompt": f"{main_char.get('name', 'protagonist')} prepares for the ultimate challenge"
+            }
+        elif expansion_type == "resolution":
+            return {
+                "type": "resolution",
+                "description": f"Satisfying resolution scene showing the aftermath and new beginnings for {main_char.get('name', 'the protagonist')} in {setting}. Ties up loose ends and hints at future adventures.",
+                "duration": 3.5,
+                "music_prompt": "hopeful anime ending music, uplifting, orchestral",
+                "voice_prompt": f"{main_char.get('name', 'protagonist')} reflects on their completed journey and future"
             }
         else:  # emotional_beats
             return {
                 "type": "emotional_beat",
-                "description": f"Quiet character moment allowing for emotional depth and reflection in {setting}.",
-                "duration": 2.0
+                "description": f"Intimate character moment between {main_char.get('name', 'the protagonist')} and {support_char.get('name', 'ally')} in {setting}. Allows for emotional depth, relationship development, and quiet reflection.",
+                "duration": 2.5,
+                "music_prompt": "gentle anime emotional music, soft piano, strings",
+                "voice_prompt": f"Heartfelt conversation between {main_char.get('name', 'protagonist')} and {support_char.get('name', 'ally')}"
             }
     
     def _generate_combat_scene(self, scene_description: str, duration: float, characters: List[Dict], 
@@ -1334,11 +1407,22 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     print("Step 3: Loading character references and voice profiles...")
     
     try:
-        anime_model = None
-        print(f"Successfully loaded {base_model} with {lora_models} LoRA(s)")
+        from ...model_manager import AIModelManager
+        
+        model_manager = AIModelManager()
+        anime_model = model_manager.load_base_model(base_model, "image")
+        
+        if anime_model:
+            print(f"Successfully loaded {base_model} with {lora_models} LoRA(s)")
+            # Ensure model has proper dictionary structure for generation
+            if not isinstance(anime_model, dict) or "generate" not in anime_model:
+                anime_model = {"generate": anime_model.generate if hasattr(anime_model, 'generate') else lambda **kwargs: None}
+        else:
+            print(f"Failed to load {base_model}, using fallback model")
+            anime_model = {"generate": lambda **kwargs: None}
     except Exception as e:
         print(f"Error loading models: {e}")
-        anime_model = None
+        anime_model = {"generate": lambda **kwargs: None}
     
     if db_run and db:
         db_run.progress = 40.0
@@ -1409,7 +1493,12 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     
                     generation_params = character_memory.ensure_character_consistency(character_id, generation_params)
                     
-                    result = None
+                    try:
+                        result = anime_model["generate"](**generation_params)
+                    except Exception as e:
+                        print(f"Error generating character {character_name}: {e}")
+                        result = None
+                    
                     if result and hasattr(result, "images") and result.images:
                         result.images[0].save(char_file)
                         print(f"Generated character image: {char_file}")
