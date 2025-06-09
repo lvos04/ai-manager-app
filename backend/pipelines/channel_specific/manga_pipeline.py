@@ -925,13 +925,13 @@ class MangaChannelPipeline(BasePipeline):
         shorts_paths = []
         
         try:
+            # Find the main video file from final directory
             main_video_path = None
-            for potential_path in [
-                self.output_path / "final" / "manga_episode.mp4",
-                self.output_path / "final" / "manga_episode_upscaled.mp4",
-                self.output_path / "final" / "temp_combined.mp4"
-            ]:
-                if potential_path.exists():
+            final_dir = shorts_dir.parent / "final"
+            
+            for potential_name in ["manga_episode_upscaled.mp4", "manga_episode.mp4", "temp_combined.mp4"]:
+                potential_path = final_dir / potential_name
+                if potential_path.exists() and potential_path.stat().st_size > 1000:
                     main_video_path = str(potential_path)
                     break
             
@@ -939,6 +939,7 @@ class MangaChannelPipeline(BasePipeline):
                 logger.warning("No main video found for shorts extraction")
                 return []
             
+            logger.info(f"Extracting highlights from main video: {main_video_path}")
             highlights = self.extract_highlights_from_video(main_video_path, num_highlights=3)
             
             if not highlights:
@@ -946,35 +947,7 @@ class MangaChannelPipeline(BasePipeline):
                 return []
             
             for i, highlight in enumerate(highlights):
-                short_path = shorts_dir / f"short_{i+1:02d}.mp4"
-                if self.create_short_from_highlight(highlight, str(short_path)):
-                    shorts_paths.append(str(short_path))
-                    logger.info(f"Created short: {short_path}")
-            
-            return shorts_paths
-            
-        except Exception as e:
-            logger.error(f"Error creating shorts: {e}")
-            return []
-        try:
-            main_video_path = None
-            for scene_file in scene_files:
-                if "final" in str(scene_file) or "episode" in str(scene_file):
-                    main_video_path = scene_file
-                    break
-            
-            if not main_video_path and scene_files:
-                main_video_path = scene_files[0]
-            
-            if not main_video_path:
-                logger.warning("No main video found for shorts generation")
-                return shorts_paths
-            
-            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
-            
-            for i, highlight in enumerate(highlights):
-                short_path = shorts_dir / f"short_{i+1:03d}.mp4"
-                
+                short_path = shorts_dir / f"manga_short_{i+1:02d}.mp4"
                 short_data = self.create_short_from_highlight(
                     main_video_path,
                     highlight,
@@ -984,12 +957,13 @@ class MangaChannelPipeline(BasePipeline):
                 
                 if short_data:
                     shorts_paths.append(str(short_path))
-                    logger.info(f"Created {self.channel_type} short {i+1}: {short_data['title']}")
-                    
+                    logger.info(f"Created manga short {i+1}: {short_data['title']}")
+            
+            return shorts_paths
+            
         except Exception as e:
-            logger.error(f"Error creating {self.channel_type} shorts: {e}")
-        
-        return shorts_paths
+            logger.error(f"Error creating manga shorts: {e}")
+            return []
     
     def _create_fallback_video(self, description: str, duration: float, output_path: str) -> str:
         """Create fallback video with text overlay."""
@@ -1052,3 +1026,5 @@ def run(input_path: str, output_path: str, base_model: str = "anythingv5",
         frame_interpolation_enabled=frame_interpolation_enabled,
         language=language
     )
+
+MangaPipeline = MangaChannelPipeline

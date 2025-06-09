@@ -49,3 +49,60 @@ TRANSLATION_MODEL = "llm"
 SVD_INFERENCE_STEPS = 50
 ZEROSCOPE_INFERENCE_STEPS = 100
 ANIMATEDIFF_INFERENCE_STEPS = 50
+
+BASE_MODEL_VERSIONS = {
+    "anythingv5": "v1.0",
+    "realisticvision": "v5.0", 
+    "dreamshaper": "v8.0",
+    "absolutereality": "v1.8.1",
+    "deliberate": "v3.0"
+}
+
+MODEL_VERSIONS = {
+    "animatediff_v2": "v2.0",
+    "stable_video_diffusion": "v1.1",
+    "zeroscope_v2": "v2.0",
+    "bark": "v0.1.5",
+    "musicgen": "v1.0"
+}
+
+CHANNEL_BASE_MODELS = {
+    "anime": ["anythingv5", "dreamshaper"],
+    "manga": ["anythingv5", "dreamshaper"], 
+    "gaming": ["realisticvision", "absolutereality"],
+    "superhero": ["realisticvision", "deliberate"],
+    "marvel_dc": ["realisticvision", "deliberate"],
+    "original_manga": ["anythingv5", "dreamshaper"]
+}
+
+AUDIO_MODEL_VERSIONS = {
+    "bark": "v0.1.5",
+    "xtts": "v2.0",
+    "musicgen": "v1.0"
+}
+
+VIDEO_MODEL_VERSIONS = {
+    "animatediff_v2": "v2.0",
+    "stable_video_diffusion": "v1.1", 
+    "zeroscope_v2": "v2.0"
+}
+
+TEXT_MODEL_VERSIONS = {
+    "deepseek_llama": "v1.0",
+    "llama2": "v7b",
+    "mistral": "v0.1"
+}
+
+EDITING_MODEL_VERSIONS = {
+    "realesrgan": "v0.3.0",
+    "rife": "v4.6"
+}
+
+ALL_MODEL_CATEGORIES = ["base", "lora", "video", "audio", "upscaling", "text", "editing"]
+
+POSSIBLE_MODEL_PATHS = [
+    "/media/leon/NieuwVolume/AI app/models/",
+    "./models/",
+    "~/models/",
+    "/opt/models/"
+]

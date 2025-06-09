@@ -578,18 +578,30 @@ class AnimeChannelPipeline(BasePipeline):
         shorts_paths = []
         
         try:
+            shorts_dir.mkdir(parents=True, exist_ok=True)
+            
             main_video_path = None
-            for potential_path in [
+            potential_paths = [
                 self.output_path / "final" / "anime_episode.mp4",
-                self.output_path / "final" / "anime_episode_upscaled.mp4",
+                self.output_path / "final" / "anime_episode_upscaled.mp4", 
                 self.output_path / "final" / "temp_combined.mp4"
-            ]:
-                if potential_path.exists():
+            ]
+            
+            for potential_path in potential_paths:
+                if potential_path.exists() and potential_path.stat().st_size > 1000:
                     main_video_path = str(potential_path)
+                    logger.info(f"Found main video for shorts: {main_video_path}")
                     break
             
             if not main_video_path:
-                logger.warning("No main video found for shorts extraction")
+                for scene_file in scene_files:
+                    if os.path.exists(scene_file) and os.path.getsize(scene_file) > 1000:
+                        main_video_path = scene_file
+                        logger.info(f"Using scene file for shorts: {main_video_path}")
+                        break
+            
+            if not main_video_path:
+                logger.warning("No suitable video found for shorts extraction")
                 return []
             
             highlights = self.extract_highlights_from_video(main_video_path, num_highlights=3)
@@ -598,35 +610,10 @@ class AnimeChannelPipeline(BasePipeline):
                 logger.warning("No highlights extracted from main video")
                 return []
             
-            for i, highlight in enumerate(highlights):
-                short_path = shorts_dir / f"short_{i+1:02d}.mp4"
-                if self.create_short_from_highlight(highlight, str(short_path)):
-                    shorts_paths.append(str(short_path))
-                    logger.info(f"Created short: {short_path}")
-            
-            return shorts_paths
-            
-        except Exception as e:
-            logger.error(f"Error creating shorts: {e}")
-            return []
-        try:
-            main_video_path = None
-            for scene_file in scene_files:
-                if "final" in str(scene_file) or "episode" in str(scene_file):
-                    main_video_path = scene_file
-                    break
-            
-            if not main_video_path and scene_files:
-                main_video_path = scene_files[0]
-            
-            if not main_video_path:
-                logger.warning("No main video found for shorts generation")
-                return shorts_paths
-            
-            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
+            logger.info(f"Extracted {len(highlights)} highlights for shorts creation")
             
             for i, highlight in enumerate(highlights):
-                short_path = shorts_dir / f"short_{i+1:03d}.mp4"
+                short_path = shorts_dir / f"anime_short_{i+1:02d}.mp4"
                 
                 short_data = self.create_short_from_highlight(
                     main_video_path,
@@ -635,14 +622,20 @@ class AnimeChannelPipeline(BasePipeline):
                     i + 1
                 )
                 
-                if short_data:
+                if short_data and os.path.exists(str(short_path)):
                     shorts_paths.append(str(short_path))
-                    logger.info(f"Created {self.channel_type} short {i+1}: {short_data['title']}")
-                    
+                    logger.info(f"Created anime short {i+1}: {short_data.get('title', 'Untitled')}")
+                else:
+                    logger.warning(f"Failed to create short {i+1}")
+            
+            logger.info(f"Successfully created {len(shorts_paths)} anime shorts")
+            return shorts_paths
+            
         except Exception as e:
-            logger.error(f"Error creating {self.channel_type} shorts: {e}")
-        
-        return shorts_paths
+            logger.error(f"Error creating anime shorts: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     def _expand_script_if_needed(self, script_data: Dict, min_duration: float = 20.0) -> Dict:
         """Expand script if it doesn't meet minimum duration requirements."""
@@ -1889,3 +1882,5 @@ def create_shorts(scenes_dir: Path, shorts_dir: Path, num_shorts: int = 5, rende
             
     except Exception as e:
         print(f"Error creating shorts: {e}")
+# Alias for backward compatibility
+AnimePipeline = AnimeChannelPipeline

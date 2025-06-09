@@ -916,71 +916,51 @@ class MarvelDCChannelPipeline(BasePipeline):
         shorts_paths = []
         
         try:
+            # Find the main video file from final directory
             main_video_path = None
-            for potential_path in [
-                self.output_path / "final" / "marvel_dc_episode.mp4",
-                self.output_path / "final" / "marvel_dc_episode_upscaled.mp4",
-                self.output_path / "final" / "temp_combined.mp4"
+            final_dir = shorts_dir.parent / "final"
+            
+            for potential_name in [
+                "marvel_dc_episode_upscaled.mp4",
+                "marvel_dc_episode.mp4", 
+                "temp_combined.mp4"
             ]:
-                if potential_path.exists():
+                potential_path = final_dir / potential_name
+                if potential_path.exists() and potential_path.stat().st_size > 1000:
                     main_video_path = str(potential_path)
                     break
             
             if not main_video_path:
-                logger.warning("No main video found for shorts extraction")
+                logger.warning("No main video found for Marvel/DC shorts extraction")
                 return []
+            
+            logger.info(f"Extracting Marvel/DC shorts from: {main_video_path}")
             
             highlights = self.extract_highlights_from_video(main_video_path, num_highlights=3)
             
             if not highlights:
-                logger.warning("No highlights extracted from main video")
+                logger.warning("No highlights extracted from Marvel/DC main video")
                 return []
             
             for i, highlight in enumerate(highlights):
-                short_path = shorts_dir / f"short_{i+1:02d}.mp4"
-                if self.create_short_from_highlight(highlight, str(short_path)):
-                    shorts_paths.append(str(short_path))
-                    logger.info(f"Created short: {short_path}")
-            
-            return shorts_paths
-            
-        except Exception as e:
-            logger.error(f"Error creating shorts: {e}")
-            return []
-        try:
-            main_video_path = None
-            for scene_file in scene_files:
-                if "final" in str(scene_file) or "episode" in str(scene_file):
-                    main_video_path = scene_file
-                    break
-            
-            if not main_video_path and scene_files:
-                main_video_path = scene_files[0]
-            
-            if not main_video_path:
-                logger.warning("No main video found for shorts generation")
-                return shorts_paths
-            
-            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
-            
-            for i, highlight in enumerate(highlights):
-                short_path = shorts_dir / f"short_{i+1:03d}.mp4"
+                short_path = shorts_dir / f"marvel_dc_short_{i+1:02d}.mp4"
                 
                 short_data = self.create_short_from_highlight(
                     main_video_path,
-                    highlight,
+                    highlight, 
                     str(short_path),
                     i + 1
                 )
                 
                 if short_data:
                     shorts_paths.append(str(short_path))
-                    logger.info(f"Created {self.channel_type} short {i+1}: {short_data['title']}")
-                    
+                    logger.info(f"Created Marvel/DC short {i+1}: {short_data['title']}")
+            
+            return shorts_paths
+            
         except Exception as e:
-            logger.error(f"Error creating {self.channel_type} shorts: {e}")
-        
-        return shorts_paths
+            logger.error(f"Error creating Marvel/DC shorts: {e}")
+            return []
     
     def _create_fallback_video(self, description: str, duration: float, output_path: str) -> str:
         """Create fallback video with text overlay."""
@@ -1043,3 +1023,5 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         frame_interpolation_enabled=frame_interpolation_enabled,
         language=language
     )
+
+MarvelDCPipeline = MarvelDCChannelPipeline
