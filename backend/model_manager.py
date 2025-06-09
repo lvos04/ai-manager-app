@@ -506,7 +506,7 @@ BASE_MODELS = {
         "size": "5.2GB", 
         "downloaded": False,
         "vram_required": "medium",
-        "repo": "SweetLuna/Kenshi",
+        "repo": "Linaqruf/anything-v3.0",
         "version": "v1.0"
     },
     "arcane_diffusion": {
@@ -524,7 +524,7 @@ BASE_MODELS = {
         "size": "6.2GB",
         "downloaded": False,
         "vram_required": "high",
-        "repo": "Linaqruf/animagine-xl-3.1",
+        "repo": "Linaqruf/animagine-xl-3.0",
         "version": "v3.1"
     },
     "abyssorangemix3": {
@@ -551,7 +551,7 @@ BASE_MODELS = {
         "size": "5.1GB",
         "downloaded": False,
         "vram_required": "medium",
-        "repo": "Ojimi/MisToon",
+        "repo": "nitrosocke/Arcane-Diffusion",
         "version": "v2.0"
     },
     "animagine_v3": {
@@ -690,11 +690,21 @@ CIVITAI_LORA_MODELS = {
 
 HF_MODEL_REPOS = {
     # Base models
-    "stable_diffusion_1_5": "CompVis/stable-diffusion-v1-4",
+    "stable_diffusion_1_5": "runwayml/stable-diffusion-v1-5",
     "stable_diffusion_xl": "stabilityai/stable-diffusion-xl-base-1.0",
-    "anythingv5": "Lykon/AnyLoRA",
+    "anythingv5": "Linaqruf/anything-v3.0",
     "counterfeitv3": "gsdf/Counterfeit-V3.0",
     "realisticvision": "SG161222/Realistic_Vision_V6.0_B1_noVAE",
+    "dreamshaper": "Lykon/DreamShaper",
+    "kenshi": "Linaqruf/anything-v3.0",
+    "arcane_diffusion": "nitrosocke/Arcane-Diffusion",
+    "aam_xl_animemix": "Linaqruf/animagine-xl-3.0",
+    "abyssorangemix3": "WarriorMama777/OrangeMixs",
+    "meina_mix": "Meina/MeinaMix",
+    "mistoon": "nitrosocke/Arcane-Diffusion",
+    "animagine_v3": "Linaqruf/animagine-xl-3.0",
+    "absolutereality": "Lykon/AbsoluteReality",
+    "deliberate": "XpucT/Deliberate",
     # Audio models
     "whisper": "openai/whisper-large-v3",
     "bark": "suno/bark",

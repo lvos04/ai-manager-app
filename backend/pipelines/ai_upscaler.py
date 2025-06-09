@@ -91,8 +91,21 @@ class AIUpscaler:
     def _load_realesrgan(self, model_name: str) -> bool:
         """Load RealESRGAN model."""
         try:
-            from realesrgan import RealESRGANer
-            from basicsr.archs.rrdbnet_arch import RRDBNet
+            try:
+                from realesrgan import RealESRGANer
+                from basicsr.archs.rrdbnet_arch import RRDBNet
+            except ImportError:
+                try:
+                    import sys
+                    sys.path.append('/home/ubuntu/.pyenv/versions/3.12.8/lib/python3.12/site-packages')
+                    from realesrgan import RealESRGANer
+                    from basicsr.archs.rrdbnet_arch import RRDBNet
+                except ImportError:
+                    logger.error("RealESRGAN not available, installing...")
+                    import subprocess
+                    subprocess.run([sys.executable, "-m", "pip", "install", "realesrgan"], check=True)
+                    from realesrgan import RealESRGANer
+                    from basicsr.archs.rrdbnet_arch import RRDBNet
             
             settings = self.model_settings[model_name].get(self.vram_tier, self.model_settings[model_name]["medium"])
             
