@@ -443,7 +443,6 @@ def _expand_script_if_needed(script_data: Dict, min_duration: float = 20.0) -> D
             return _expand_script_fallback(script_data, min_duration)
         
         try:
-            import torch
             scenes = script_data.get('scenes', [])
             expanded_scenes = []
             
@@ -453,22 +452,14 @@ def _expand_script_if_needed(script_data: Dict, min_duration: float = 20.0) -> D
                 if len(scene.get('description', '')) < 100:
                     prompt = f"Expand this scene with more detail: {scene.get('description', '')}"
                     
-                    inputs = llm["tokenizer"](prompt, return_tensors="pt", truncation=True, max_length=512)
-                    if torch.cuda.is_available():
-                        inputs = {k: v.to(llm["device"]) for k, v in inputs.items()}
-                    
-                    with torch.no_grad():
-                        outputs = llm["model"].generate(
-                            **inputs,
-                            max_length=inputs["input_ids"].shape[1] + 100,
-                            num_return_sequences=1,
-                            temperature=0.8,
-                            do_sample=True,
-                            pad_token_id=llm["tokenizer"].eos_token_id
-                        )
-                    
-                    expanded_text = llm["tokenizer"].decode(outputs[0], skip_special_tokens=True)
-                    expanded_scene['description'] = expanded_text[len(prompt):].strip()
+                    if llm.get("generate"):
+                        expanded_text = llm["generate"](prompt, max_tokens=100)
+                        if expanded_text and len(expanded_text.strip()) > 0:
+                            expanded_scene['description'] = expanded_text.strip()
+                        else:
+                            expanded_scene['description'] = f"Enhanced {scene.get('description', 'scene')} with detailed character interactions and dynamic action sequences"
+                    else:
+                        expanded_scene['description'] = f"Enhanced {scene.get('description', 'scene')} with detailed character interactions and dynamic action sequences"
                 
                 expanded_scene['duration'] = max(scene.get('duration', 5.0), 8.0)
                 expanded_scenes.append(expanded_scene)

@@ -38,8 +38,8 @@ except ImportError as e:
 class AnimeChannelPipeline(BasePipeline):
     """Self-contained anime content generation pipeline with all functionality inlined."""
     
-    def __init__(self):
-        super().__init__("anime")
+    def __init__(self, output_path: Optional[str] = None):
+        super().__init__("anime", output_path)
         self.combat_calls_count = 0
         self.max_combat_calls = 3
         self.scene_duration_estimates = {
@@ -581,10 +581,11 @@ class AnimeChannelPipeline(BasePipeline):
             shorts_dir.mkdir(parents=True, exist_ok=True)
             
             main_video_path = None
+            base_path = self.output_path if self.output_path else Path("./output")
             potential_paths = [
-                self.output_path / "final" / "anime_episode.mp4",
-                self.output_path / "final" / "anime_episode_upscaled.mp4", 
-                self.output_path / "final" / "temp_combined.mp4"
+                base_path / "final" / "anime_episode.mp4",
+                base_path / "final" / "anime_episode_upscaled.mp4", 
+                base_path / "final" / "temp_combined.mp4"
             ]
             
             for potential_path in potential_paths:
@@ -877,19 +878,16 @@ class AnimeChannelPipeline(BasePipeline):
         """Generate voice lines with maximum quality."""
         try:
             voice_model = self.load_voice_model("bark")
-            if voice_model:
-                voice_params = {
-                    "text": text,
-                    "voice_preset": "v2/en_speaker_6" if language == "en" else f"v2/{language}_speaker_0",
-                    "temperature": 0.7,
-                    "silence_duration": 0.25,
-                    "sample_rate": 48000,  # High quality sample rate
-                    "output_path": output_path
-                }
+            if voice_model and voice_model.get("generate"):
+                voice_preset = "v2/en_speaker_6" if language == "en" else f"v2/{language}_speaker_0"
                 
-                success = voice_model.generate(**voice_params)
-                if success and os.path.exists(output_path):
-                    return output_path
+                audio_array, sample_rate = voice_model["generate"](text, voice_preset)
+                
+                if audio_array is not None:
+                    import soundfile as sf
+                    sf.write(output_path, audio_array, sample_rate)
+                    if os.path.exists(output_path):
+                        return output_path
             
             return self._create_silent_audio(output_path, duration=len(text) * 0.1)
             
@@ -923,20 +921,16 @@ class AnimeChannelPipeline(BasePipeline):
         """Generate background music with maximum quality."""
         try:
             music_model = self.load_music_model("musicgen")
-            if music_model:
-                music_params = {
-                    "prompt": f"high quality, professional, {prompt}",
-                    "duration": duration,
-                    "sample_rate": 48000,  # High quality
-                    "top_k": 250,  # Maximum diversity
-                    "top_p": 0.0,  # Deterministic for quality
-                    "temperature": 0.8,
-                    "output_path": output_path
-                }
+            if music_model and music_model.get("generate"):
+                music_prompt = f"high quality, professional, {prompt}"
                 
-                success = music_model.generate(**music_params)
-                if success and os.path.exists(output_path):
-                    return output_path
+                audio_output = music_model["generate"](music_prompt, duration)
+                
+                if audio_output is not None:
+                    import torchaudio
+                    torchaudio.save(output_path, audio_output[0].cpu(), 32000)
+                    if os.path.exists(output_path):
+                        return output_path
             
             return self._create_silent_audio(output_path, duration)
             
@@ -1089,7 +1083,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         db_run=None, db=None, render_fps: int = 24, output_fps: int = 60, 
         frame_interpolation_enabled: bool = True, language: str = "en") -> str:
     """Run anime pipeline with self-contained processing."""
-    pipeline = AnimeChannelPipeline()
+    pipeline = AnimeChannelPipeline(output_path=output_path)
     return pipeline.run(
         input_path=input_path,
         output_path=output_path,
