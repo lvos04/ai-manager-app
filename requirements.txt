@@ -55,9 +55,7 @@ moviepy==1.0.3
 opencv-python>=4.8.0
 librosa>=0.10.0
 
-# Music generation - commented out due to potential thinc dependency conflicts on Python 3.12
-# audiocraft>=1.0.0  # May pull in thinc which fails to compile on Python 3.12
-# Install manually if needed: pip install audiocraft
+# Music generation
 rarfile>=4.0
 
 # NLP packages - make optional due to Python 3.12 Windows compilation issues

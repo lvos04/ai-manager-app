@@ -38,8 +38,8 @@ except ImportError as e:
 class AnimeChannelPipeline(BasePipeline):
     """Self-contained anime content generation pipeline with all functionality inlined."""
     
-    def __init__(self):
-        super().__init__("anime")
+    def __init__(self, output_path: Optional[str] = None):
+        super().__init__("anime", output_path)
         self.combat_calls_count = 0
         self.max_combat_calls = 3
         self.scene_duration_estimates = {
@@ -152,16 +152,24 @@ class AnimeChannelPipeline(BasePipeline):
             script_data['characters'] = characters
             script_data['locations'] = locations
             
-            expanded_script = self._expand_script_if_needed(script_data, min_duration=20.0)
+            print("Processing script with LLM for advanced scene analysis...")
+            processed_script = self._process_script_with_llm(script_data, "anime")
             
-            scenes = expanded_script.get('scenes', scenes)
-            characters = expanded_script.get('characters', characters)
-            locations = expanded_script.get('locations', locations)
+            if processed_script.get('llm_processed'):
+                enhanced_scenes = processed_script.get('enhanced_scenes', [])
+                print(f"LLM processed {len(enhanced_scenes)} scenes with model-specific prompts")
+            else:
+                print("Using fallback scene processing")
+                enhanced_scenes = processed_script.get('enhanced_scenes', [])
             
-            print(f"Anime script expanded to {len(scenes)} scenes for 20-minute target")
+            scenes = enhanced_scenes
+            characters = processed_script.get('characters', characters)
+            locations = processed_script.get('locations', locations)
+            
+            print(f"Anime script processed with {len(scenes)} enhanced scenes")
             
         except Exception as e:
-            print(f"Error during anime script expansion: {e}")
+            print(f"Error during LLM script processing: {e}")
         
         print("Step 3: Generating anime scenes with combat integration...")
         if db_run and db:
@@ -169,20 +177,27 @@ class AnimeChannelPipeline(BasePipeline):
             db.commit()
         
         scene_files = []
-        for i, scene in enumerate(scenes):
-            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
-            scene_chars = [characters[i % len(characters)], characters[(i + 1) % len(characters)]]
-            scene_location = locations[i % len(locations)]
-            
-            scene_type = self._detect_scene_type(scene_text)
+        for i, enhanced_scene in enumerate(scenes):
+            if isinstance(enhanced_scene, dict) and 'video_prompt' in enhanced_scene:
+                video_prompt = enhanced_scene['video_prompt']
+                scene_type = enhanced_scene.get('scene_type', 'default')
+                duration = enhanced_scene.get('duration', 10.0)
+                scene_text = enhanced_scene.get('original_description', f'Scene {i+1}')
+                scene_number = enhanced_scene.get('scene_number', i + 1)
+            else:
+                scene_text = enhanced_scene if isinstance(enhanced_scene, str) else enhanced_scene.get('description', f'Scene {i+1}')
+                video_prompt = f"masterpiece, best quality, ultra detailed, 8k resolution, cinematic lighting, smooth animation, professional anime style, vibrant colors, dynamic composition, {scene_text}, 16:9 aspect ratio, smooth motion, professional cinematography, ultra high definition"
+                scene_type = self._detect_scene_type(scene_text)
+                duration = enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) else 10.0
+                scene_number = i + 1
             
             scene_detail = {
-                "scene_number": i + 1,
+                "scene_number": scene_number,
                 "description": scene_text,
-                "characters": scene_chars,
-                "location": scene_location,
+                "video_prompt": video_prompt,
                 "scene_type": scene_type,
-                "duration": scene.get('duration', 10.0) if isinstance(scene, dict) else 10.0
+                "duration": duration,
+                "enhanced": isinstance(enhanced_scene, dict) and 'video_prompt' in enhanced_scene
             }
             
             if scene_type == "combat" and self.combat_calls_count < self.max_combat_calls:
@@ -207,17 +222,16 @@ class AnimeChannelPipeline(BasePipeline):
             print(f"Generating anime scene {i+1}: {str(scene_text)[:50]}...")
             
             try:
-                char_names = ", ".join([c.get("name", "character") if isinstance(c, dict) else str(c) for c in scene_chars])
-                location_desc = scene_location.get("description", scene_location.get("name", "location")) if isinstance(scene_location, dict) else str(scene_location)
-                
-                anime_prompt = f"anime scene, {location_desc}, with {char_names}, {scene_text}, detailed anime style, vibrant colors, high quality, 16:9 aspect ratio"
+                anime_prompt = video_prompt
                 
                 if scene_detail.get("combat_data"):
                     anime_prompt = scene_detail["combat_data"]["video_prompt"]
                 
+                print(f"Using {'LLM-enhanced' if scene_detail.get('enhanced') else 'fallback'} prompt: {anime_prompt[:100]}...")
+                
                 video_path = self._create_scene_video_with_generation(
                     scene_description=anime_prompt,
-                    characters=scene_chars,
+                    characters=[],  # Characters already incorporated in LLM prompt
                     output_path=str(scene_file),
                     duration=scene_detail["duration"]
                 )
@@ -244,22 +258,27 @@ class AnimeChannelPipeline(BasePipeline):
             db.commit()
         
         voice_files = []
-        for i, scene in enumerate(scenes):
-            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
-            dialogue = scene.get('dialogue', scene_text) if isinstance(scene, dict) else scene_text
+        for i, enhanced_scene in enumerate(scenes):
+            if isinstance(enhanced_scene, dict) and 'voice_prompt' in enhanced_scene:
+                voice_text = enhanced_scene['voice_prompt']
+                print(f"Using LLM-generated voice prompt for scene {i+1}")
+            else:
+                scene_text = enhanced_scene if isinstance(enhanced_scene, str) else enhanced_scene.get('description', f'Scene {i+1}')
+                voice_text = enhanced_scene.get('dialogue', scene_text) if isinstance(enhanced_scene, dict) else scene_text
+                print(f"Using fallback voice text for scene {i+1}")
             
             voice_file = scenes_dir / f"voice_{i+1:03d}.wav"
             
             try:
                 voice_path = self._generate_voice_lines(
-                    text=dialogue,
+                    text=voice_text,  # Use LLM-generated voice prompt
                     language=language,
                     output_path=str(voice_file)
                 )
                 
                 if voice_path:
                     voice_files.append(voice_path)
-                    print(f"Generated voice for scene {i+1}")
+                    print(f"Generated voice for scene {i+1} with enhanced prompt")
                     
             except Exception as e:
                 print(f"Error generating voice for scene {i+1}: {e}")
@@ -271,12 +290,29 @@ class AnimeChannelPipeline(BasePipeline):
         
         music_file = final_dir / "background_music.wav"
         try:
+            music_prompts = []
+            total_duration = 0
+            
+            for enhanced_scene in scenes:
+                if isinstance(enhanced_scene, dict) and 'music_prompt' in enhanced_scene:
+                    music_prompts.append(enhanced_scene['music_prompt'])
+                    total_duration += enhanced_scene.get('duration', 10.0)
+                else:
+                    total_duration += enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) else 10.0
+            
+            if music_prompts:
+                combined_music_prompt = f"anime soundtrack combining: {', '.join(set(music_prompts))}"
+                print(f"Using LLM-generated music prompts from {len(music_prompts)} scenes")
+            else:
+                combined_music_prompt = "anime background music, epic adventure soundtrack"
+                print("Using fallback music prompt")
+            
             music_path = self._generate_background_music(
-                prompt="anime background music, epic adventure soundtrack",
-                duration=sum(scene.get('duration', 10.0) if isinstance(scene, dict) else 10.0 for scene in scenes),
+                prompt=combined_music_prompt,  # Use LLM-generated music prompt
+                duration=total_duration,
                 output_path=str(music_file)
             )
-            print(f"Generated background music: {music_path}")
+            print(f"Generated background music with enhanced prompt: {combined_music_prompt[:100]}...")
         except Exception as e:
             print(f"Error generating background music: {e}")
             music_path = None
@@ -923,7 +959,7 @@ class AnimeChannelPipeline(BasePipeline):
         """Generate background music with maximum quality."""
         try:
             music_model = self.load_music_model("musicgen")
-            if music_model:
+            if music_model and music_model.get("type") != "fallback":
                 music_params = {
                     "prompt": f"high quality, professional, {prompt}",
                     "duration": duration,
@@ -934,7 +970,7 @@ class AnimeChannelPipeline(BasePipeline):
                     "output_path": output_path
                 }
                 
-                success = music_model.generate(**music_params)
+                success = music_model["generate"](**music_params)
                 if success and os.path.exists(output_path):
                     return output_path
             
@@ -952,6 +988,10 @@ class AnimeChannelPipeline(BasePipeline):
             return output_path
         
         try:
+            from ..ai_upscaler import AIUpscaler
+            
+            upscaler = AIUpscaler(vram_tier=self.vram_tier)
+            
             resolution_map = {
                 "720p": (1280, 720),
                 "1080p": (1920, 1080), 
@@ -959,34 +999,27 @@ class AnimeChannelPipeline(BasePipeline):
                 "4k": (3840, 2160)
             }
             
-            target_width, target_height = resolution_map.get(target_resolution, (1920, 1080))
+            target_dimensions = resolution_map.get(target_resolution, (1920, 1080))
             
-            cmd = [
-                'ffmpeg', '-y', '-i', input_path,
-                '-vf', f'scale={target_width}:{target_height}:flags=lanczos',
-                '-c:v', 'libx264',
-                '-preset', 'veryslow',  # Maximum quality preset
-                '-crf', '15',  # High quality CRF
-                '-profile:v', 'high',
-                '-level', '4.1',
-                '-pix_fmt', 'yuv420p',
-                '-c:a', 'aac',
-                '-b:a', '320k',  # High quality audio
-                output_path
-            ]
+            model_name = upscaler.get_best_model_for_content("anime", target_scale=2)
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            success = upscaler.upscale_video(
+                input_path=input_path,
+                output_path=output_path,
+                model_name=model_name,
+                target_resolution=target_dimensions
+            )
             
-            if result.returncode == 0 and os.path.exists(output_path):
-                logger.info(f"Video upscaled to {target_resolution}: {output_path}")
+            if success and os.path.exists(output_path):
+                logger.info(f"Video upscaled to {target_resolution} using RealESRGAN: {output_path}")
                 return output_path
             else:
-                logger.warning(f"FFmpeg upscaling failed: {result.stderr}")
+                logger.warning("RealESRGAN upscaling failed, copying original")
                 shutil.copy2(input_path, output_path)
                 return output_path
                 
         except Exception as e:
-            logger.error(f"Error upscaling video: {e}")
+            logger.error(f"Error upscaling video with RealESRGAN: {e}")
             shutil.copy2(input_path, output_path)
             return output_path
     

@@ -38,8 +38,8 @@ except ImportError as e:
 class MarvelDCChannelPipeline(BasePipeline):
     """Self-contained Marvel/DC content generation pipeline with all functionality inlined."""
     
-    def __init__(self):
-        super().__init__("marvel_dc")
+    def __init__(self, output_path: Optional[str] = None):
+        super().__init__("marvel_dc", output_path)
         self.combat_calls_count = 0
         self.max_combat_calls = 1
         self.scene_duration_estimates = {
@@ -149,10 +149,32 @@ class MarvelDCChannelPipeline(BasePipeline):
         if not locations:
             locations = ["Metropolis", "Secret Base", "Villain Lair", "Battlefield"]
         
-        print("Step 2: Expanding script with LLM...")
+        print("Step 2: Processing script with LLM for enhanced scene analysis...")
         if db_run and db:
             db_run.progress = 10.0
             db.commit()
+        
+        try:
+            script_data['characters'] = characters
+            script_data['locations'] = locations
+            
+            processed_script = self._process_script_with_llm(script_data, "marvel_dc")
+            
+            if processed_script.get('llm_processed'):
+                enhanced_scenes = processed_script.get('enhanced_scenes', [])
+                print(f"LLM processed {len(enhanced_scenes)} Marvel/DC scenes with model-specific prompts")
+            else:
+                print("Using fallback scene processing for Marvel/DC")
+                enhanced_scenes = processed_script.get('enhanced_scenes', [])
+            
+            scenes = enhanced_scenes
+            characters = processed_script.get('characters', characters)
+            locations = processed_script.get('locations', locations)
+            
+            print(f"Marvel/DC script processed with {len(scenes)} enhanced scenes")
+            
+        except Exception as e:
+            print(f"Error during LLM script processing: {e}")
         
         try:
             script_data['scenes'] = scenes
@@ -733,6 +755,10 @@ class MarvelDCChannelPipeline(BasePipeline):
             return output_path
         
         try:
+            from ..ai_upscaler import AIUpscaler
+            
+            upscaler = AIUpscaler(vram_tier=self.vram_tier)
+            
             resolution_map = {
                 "720p": (1280, 720),
                 "1080p": (1920, 1080), 
@@ -740,34 +766,27 @@ class MarvelDCChannelPipeline(BasePipeline):
                 "4k": (3840, 2160)
             }
             
-            target_width, target_height = resolution_map.get(target_resolution, (1920, 1080))
+            target_dimensions = resolution_map.get(target_resolution, (1920, 1080))
             
-            cmd = [
-                'ffmpeg', '-y', '-i', input_path,
-                '-vf', f'scale={target_width}:{target_height}:flags=lanczos',
-                '-c:v', 'libx264',
-                '-preset', 'veryslow',  # Maximum quality preset
-                '-crf', '15',  # High quality CRF
-                '-profile:v', 'high',
-                '-level', '4.1',
-                '-pix_fmt', 'yuv420p',
-                '-c:a', 'aac',
-                '-b:a', '320k',  # High quality audio
-                output_path
-            ]
+            model_name = upscaler.get_best_model_for_content("superhero", target_scale=2)
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            success = upscaler.upscale_video(
+                input_path=input_path,
+                output_path=output_path,
+                model_name=model_name,
+                target_resolution=target_dimensions
+            )
             
-            if result.returncode == 0 and os.path.exists(output_path):
-                logger.info(f"Video upscaled to {target_resolution}: {output_path}")
+            if success and os.path.exists(output_path):
+                logger.info(f"Video upscaled to {target_resolution} using RealESRGAN: {output_path}")
                 return output_path
             else:
-                logger.warning(f"FFmpeg upscaling failed: {result.stderr}")
+                logger.warning("RealESRGAN upscaling failed, copying original")
                 shutil.copy2(input_path, output_path)
                 return output_path
                 
         except Exception as e:
-            logger.error(f"Error upscaling video: {e}")
+            logger.error(f"Error upscaling video with RealESRGAN: {e}")
             shutil.copy2(input_path, output_path)
             return output_path
     
