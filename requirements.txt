@@ -85,6 +85,9 @@ opencv-python>=4.8.0
 # spacy and thinc - use pre-built wheels: pip install spacy thinc --only-binary=all
 # Note: audiocraft is now included above for Python 3.12 compatibility
 
+# AI upscaling models
+realesrgan==0.3.0
+
 # Enhanced Windows compatibility
 PyQt6>=6.4.0; sys_platform == "win32"
 PySide6>=6.4.0; sys_platform == "win32"

@@ -864,6 +864,14 @@ def get_available_models():
             "size": "2.9GB",
             "model_id": "google/flan-t5-base",
             "vram_requirement": "medium"
+        },
+        "realesrgan_anime": {
+            "name": "RealESRGAN Anime Upscaler",
+            "description": "AI-powered 4x upscaling optimized for anime content",
+            "type": "editing",
+            "size": "67MB",
+            "model_id": "ai-forever/Real-ESRGAN",
+            "vram_requirement": "medium"
         }
     }
     
@@ -1112,7 +1120,7 @@ def check_model_downloaded(model_id: str, model_type: str) -> bool:
     models_dir = Path(MODELS_DIR) / model_type / model_id
     return models_dir.exists() and any(models_dir.iterdir())
 
-def check_model_files_exist(model_dir: Path, expected_extensions: list = None) -> bool:
+def check_model_files_exist(model_dir: Path, expected_extensions: list[str] | None = None) -> bool:
     """Check if model files exist in directory with expected extensions."""
     if not model_dir.exists():
         return False

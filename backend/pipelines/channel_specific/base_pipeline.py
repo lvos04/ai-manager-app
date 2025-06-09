@@ -362,86 +362,91 @@ class BasePipeline:
             return ""
     
     def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
-        """Generate text using loaded LLM model with timeout protection."""
+        """Generate text using loaded LLM model with thread-safe timeout protection."""
         try:
             import torch
-            import signal
+            import threading
+            import queue
             
-            def timeout_handler(signum, frame):
-                raise TimeoutError("LLM generation timeout")
+            result_queue = queue.Queue()
+            timeout_occurred = threading.Event()
             
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(30)  # 30 second timeout
+            def llm_worker():
+                try:
+                    # Format prompt for better content generation
+                    if "title" in prompt.lower():
+                        formatted_prompt = f"YouTube video title about {prompt.replace('Generate a YouTube title for', '').replace('Create an engaging title for', '').strip()}: "
+                    elif "description" in prompt.lower():
+                        formatted_prompt = f"YouTube video description about {prompt.replace('Generate a YouTube description for', '').strip()}: "
+                    elif "next episode" in prompt.lower():
+                        formatted_prompt = f"Next episode suggestions for {prompt.replace('Generate next episode suggestions for', '').strip()}: 1."
+                    else:
+                        formatted_prompt = f"{prompt}: "
+                    
+                    if tokenizer.pad_token is None:
+                        tokenizer.pad_token = tokenizer.eos_token
+                    
+                    inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=True, max_length=256)
+                    if torch.cuda.is_available() and self.vram_tier != "low":
+                        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                    
+                    with torch.no_grad():
+                        outputs = model.generate(
+                            **inputs,
+                            max_new_tokens=min(max_tokens, 50),  # Limit tokens for faster generation
+                            do_sample=True,
+                            temperature=0.8,
+                            top_p=0.9,
+                            repetition_penalty=1.1,
+                            pad_token_id=tokenizer.eos_token_id,
+                            eos_token_id=tokenizer.eos_token_id,
+                            num_return_sequences=1,
+                            num_beams=1,  # Faster generation
+                            early_stopping=True
+                        )
+                    
+                    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    
+                    if formatted_prompt in generated_text:
+                        response = generated_text.replace(formatted_prompt, "").strip()
+                    else:
+                        response = generated_text.strip()
+                    
+                    if response:
+                        response = response.replace('\n', ' ').strip()
+                        
+                        if "title" in prompt.lower():
+                            response = response.replace('YouTube video title about', '').replace('Title:', '').strip()
+                            response = response.replace('Create a YouTube Title for', '').replace('Description (optional)', '').strip()
+                            
+                            if '.' in response:
+                                response = response.split('.')[0].strip()
+                            if response.endswith(('!', '?')):
+                                pass  # Keep exclamation/question marks
+                            elif not response.endswith(('!', '?', ':')):
+                                response = response.strip() + '!'
+                        
+                        if len(response) < 5 or response.lower() in ['title', 'description', 'content', 'your name, your profile picture and more']:
+                            result_queue.put(self._generate_fallback_content_for_prompt(prompt))
+                        else:
+                            result_queue.put(response[:200])  # Reasonable max length
+                    else:
+                        result_queue.put(self._generate_fallback_content_for_prompt(prompt))
+                        
+                except Exception as e:
+                    result_queue.put(self._generate_fallback_content_for_prompt(prompt))
+            
+            worker_thread = threading.Thread(target=llm_worker)
+            worker_thread.daemon = True
+            worker_thread.start()
             
             try:
-                # Format prompt for better content generation
-                if "title" in prompt.lower():
-                    formatted_prompt = f"YouTube video title about {prompt.replace('Generate a YouTube title for', '').replace('Create an engaging title for', '').strip()}: "
-                elif "description" in prompt.lower():
-                    formatted_prompt = f"YouTube video description about {prompt.replace('Generate a YouTube description for', '').strip()}: "
-                elif "next episode" in prompt.lower():
-                    formatted_prompt = f"Next episode suggestions for {prompt.replace('Generate next episode suggestions for', '').strip()}: 1."
-                else:
-                    formatted_prompt = f"{prompt}: "
-                
-                if tokenizer.pad_token is None:
-                    tokenizer.pad_token = tokenizer.eos_token
-                
-                inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=True, max_length=256)
-                if torch.cuda.is_available() and self.vram_tier != "low":
-                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                
-                with torch.no_grad():
-                    outputs = model.generate(
-                        **inputs,
-                        max_new_tokens=min(max_tokens, 50),  # Limit tokens for faster generation
-                        do_sample=True,
-                        temperature=0.8,
-                        top_p=0.9,
-                        repetition_penalty=1.1,
-                        pad_token_id=tokenizer.eos_token_id,
-                        eos_token_id=tokenizer.eos_token_id,
-                        num_return_sequences=1,
-                        num_beams=1,  # Faster generation
-                        early_stopping=True
-                    )
-                
-                generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-                
-                if formatted_prompt in generated_text:
-                    response = generated_text.replace(formatted_prompt, "").strip()
-                else:
-                    response = generated_text.strip()
-                
-                if response:
-                    response = response.replace('\n', ' ').strip()
-                    
-                    if "title" in prompt.lower():
-                        response = response.replace('YouTube video title about', '').replace('Title:', '').strip()
-                        response = response.replace('Create a YouTube Title for', '').replace('Description (optional)', '').strip()
-                        
-                        if '.' in response:
-                            response = response.split('.')[0].strip()
-                        if response.endswith(('!', '?')):
-                            pass  # Keep exclamation/question marks
-                        elif not response.endswith(('!', '?', ':')):
-                            response = response.strip() + '!'
-                    
-                    if len(response) < 5 or response.lower() in ['title', 'description', 'content', 'your name, your profile picture and more']:
-                        signal.alarm(0)  # Cancel timeout
-                        return self._generate_fallback_content_for_prompt(prompt)
-                    
-                    signal.alarm(0)  # Cancel timeout
-                    return response[:200]  # Reasonable max length
-                else:
-                    signal.alarm(0)  # Cancel timeout
-                    return self._generate_fallback_content_for_prompt(prompt)
-                
-            except TimeoutError:
+                result = result_queue.get(timeout=30)
+                return result
+            except queue.Empty:
+                timeout_occurred.set()
                 logger.warning("LLM generation timed out, using fallback")
                 return self._generate_fallback_content_for_prompt(prompt)
-            finally:
-                signal.alarm(0)  # Ensure timeout is cancelled
             
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
