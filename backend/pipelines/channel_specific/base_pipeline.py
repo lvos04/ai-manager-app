@@ -110,6 +110,23 @@ class BasePipeline:
     
     def _enhance_prompt_for_channel(self, prompt: str) -> str:
         """Enhance prompt for specific channel style."""
+    def _classify_scene_type(self, prompt: str) -> str:
+        """Classify scene type for optimal model selection."""
+        prompt_lower = prompt.lower()
+        
+        if any(word in prompt_lower for word in ["fight", "battle", "combat", "attack", "war"]):
+            return "combat"
+        elif any(word in prompt_lower for word in ["action", "chase", "run", "escape", "fast"]):
+            return "action"
+        elif any(word in prompt_lower for word in ["talk", "dialogue", "conversation", "speak", "discuss"]):
+            return "dialogue"
+        elif any(word in prompt_lower for word in ["explore", "discover", "journey", "travel", "walk"]):
+            return "exploration"
+        elif any(word in prompt_lower for word in ["emotion", "sad", "happy", "love", "memory", "feel"]):
+            return "character_development"
+        else:
+            return "default"
+
         return f"{self.channel_type} style, {prompt}, high quality, detailed"
     
     def _combine_scene_videos(self, video_paths: List[str], output_path: str):
@@ -843,62 +860,43 @@ class BasePipeline:
         }
     
     def generate_video(self, prompt: str, duration: float = 5.0, output_path: Optional[str] = None) -> Optional[str]:
-        """Generate video using efficient CPU-friendly approach."""
+        """Generate video using real AI models."""
         if not output_path:
             output_path = f"generated_video_{int(time.time())}.mp4"
         
         try:
-            import psutil
-            memory_gb = psutil.virtual_memory().total / (1024**3)
-            memory_percent = psutil.virtual_memory().percent
+            from ..text_to_video_generator import TextToVideoGenerator
             
-            if self.device == "cpu" or memory_gb < 8 or memory_percent > 85:
-                logger.info("Using CPU-optimized video generation")
-                return self._create_efficient_video(prompt, duration, output_path)
-        except ImportError:
-            logger.info("Using efficient video generation (psutil unavailable)")
-            return self._create_efficient_video(prompt, duration, output_path)
-        
-        try:
-            if self.device != "cpu" and memory_gb >= 8:
-                import cv2
-                import numpy as np
-                
-                duration = min(duration, 5.0)
-                fps = 24
-                frames = int(duration * fps)
-                width, height = 1920, 1080
-                
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-                
-                if not out.isOpened():
-                    logger.error("Failed to open video writer")
-                    return self._create_efficient_video(prompt, duration, output_path)
-                
-                for i in range(min(frames, 120)):  # Max 120 frames
-                    frame = np.zeros((height, width, 3), dtype=np.uint8)
-                    frame[:] = (50, 50, 100)  # Dark blue background
-                    
-                    try:
-                        cv2.putText(frame, "Generated Video", 
-                                   (50, height//2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-                        cv2.putText(frame, f"Frame {i+1}", 
-                                   (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
-                    except:
-                        pass  # Skip text if it fails
-                    
-                    out.write(frame)
-                
-                out.release()
-                logger.info(f"GPU video generated: {output_path}")
+            if not hasattr(self, 'video_generator') or self.video_generator is None:
+                self.video_generator = TextToVideoGenerator(
+                    vram_tier=self.vram_tier,
+                    target_resolution=(1920, 1080)
+                )
+            
+            scene_type = self._classify_scene_type(prompt)
+            model_name = self.video_generator.get_best_model_for_content(scene_type, self.vram_tier)
+            
+            logger.info(f"Generating video with AI model {model_name}: {prompt[:50]}...")
+            
+            success = self.video_generator.generate_video(
+                prompt=prompt,
+                model_name=model_name,
+                output_path=output_path,
+                duration=duration,
+                scene_type=scene_type
+            )
+            
+            if success and os.path.exists(output_path):
+                logger.info(f"AI video generated successfully: {output_path}")
                 return output_path
-                    
+            else:
+                logger.error(f"AI video generation failed, creating fallback")
+                return self._create_efficient_video(prompt, duration, output_path)
+            
         except Exception as e:
-            logger.warning(f"GPU video generation failed: {e}")
-        
-        logger.info("Falling back to CPU-optimized video generation")
-        return self._create_efficient_video(prompt, duration, output_path)
+            logger.error(f"Error in AI video generation: {e}")
+            logger.info("Falling back to placeholder video generation")
+            return self._create_efficient_video(prompt, duration, output_path)
     
     def _create_efficient_video(self, prompt: str, duration: float, output_path: str) -> str:
         """Create efficient video optimized for CPU systems."""
@@ -1186,30 +1184,37 @@ class BasePipeline:
             return output_path
     
     def generate_voice(self, text: str, character_voice: str = "default", output_path: str = None, language: str = "en") -> str:
-        """Generate voice audio for text."""
+        """Generate voice audio using real AI models."""
         try:
-            voice_model = self.load_voice_model("bark")
+            from ..ai_voice_generator import AIVoiceGenerator
             
-            if voice_model and voice_model.get("loaded"):
-                if voice_model["type"] == "bark":
-                    try:
-                        audio_array = voice_model["generate"](text, history_prompt=character_voice)
-                        
-                        if output_path:
-                            import soundfile as sf
-                            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                            sf.write(output_path, audio_array, voice_model["sample_rate"])
-                            return output_path
-                        else:
-                            return str(audio_array)
-                    except Exception as e:
-                        logger.error(f"Bark voice generation failed: {e}")
-                        return self._create_fallback_audio(text, output_path)
+            if not output_path:
+                output_path = f"generated_voice_{int(time.time())}.wav"
             
-            return self._create_fallback_audio(text, output_path)
+            if not hasattr(self, 'voice_generator') or self.voice_generator is None:
+                self.voice_generator = AIVoiceGenerator(vram_tier=self.vram_tier)
+            
+            model_name = self.voice_generator.get_best_model_for_language(language)
+            
+            logger.info(f"Generating voice with AI model {model_name}: {text[:50]}...")
+            
+            success = self.voice_generator.generate_voice(
+                text=text,
+                model_name=model_name,
+                output_path=output_path,
+                language=language,
+                character_voice=character_voice
+            )
+            
+            if success and os.path.exists(output_path):
+                logger.info(f"AI voice generated successfully: {output_path}")
+                return output_path
+            else:
+                logger.error(f"AI voice generation failed, creating fallback")
+                return self._create_fallback_audio(text, output_path)
             
         except Exception as e:
-            logger.error(f"Voice generation failed: {e}")
+            logger.error(f"Error in AI voice generation: {e}")
             return self._create_fallback_audio(text, output_path)
     
     def _create_fallback_audio(self, text: str, output_path: str) -> str:
@@ -1237,37 +1242,67 @@ class BasePipeline:
             
         except Exception as e:
             logger.error(f"Fallback audio creation failed: {e}")
-            return output_path
-    
-    def generate_background_music(self, scene_description: str, duration: float = 30.0, output_path: str = None) -> str:
-        """Generate background music for scene."""
+    def _create_fallback_audio(self, text: str, output_path: str) -> str:
+        """Create fallback audio when AI generation fails."""
         try:
-            music_model = self.load_music_model("musicgen")
+            import numpy as np
+            import scipy.io.wavfile as wavfile
             
-            if music_model and music_model.get("loaded"):
-                music_prompt = f"Epic background music for {scene_description}, cinematic and atmospheric"
-                
-                if music_model["type"] == "musicgen":
-                    try:
-                        audio_tensor = music_model["generate"](music_prompt, duration)
-                        
-                        if output_path:
-                            import torchaudio
-                            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                            torchaudio.save(output_path, audio_tensor[0].cpu(), 32000)
-                            return output_path
-                        else:
-                            return str(audio_tensor)
-                    except Exception as e:
-                        logger.error(f"MusicGen generation failed: {e}")
-                        return self._create_fallback_music(scene_description, duration, output_path)
-                elif music_model["type"] == "fallback":
-                    return music_model["generate"]([scene_description], duration)
+            if not output_path:
+                output_path = f"fallback_audio_{int(time.time())}.wav"
             
-            return self._create_fallback_music(scene_description, duration, output_path)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            duration = max(len(text) * 0.1, 2.0)
+            sample_rate = 22050
+            samples = int(duration * sample_rate)
+            
+            silence = np.zeros(samples, dtype=np.int16)
+            
+            wavfile.write(output_path, sample_rate, silence)
+            
+            logger.warning(f"Created fallback silent audio: {output_path}")
+            return output_path
             
         except Exception as e:
-            logger.error(f"Music generation failed: {e}")
+            logger.error(f"Error creating fallback audio: {e}")
+            return output_path
+
+
+            return output_path
+    
+    def generate_background_music(self, scene_description: str, duration: float = 30.0, output_path: str = None, scene_type: str = "default") -> str:
+        """Generate background music using real AI models."""
+        try:
+            from ..ai_music_generator import AIMusicGenerator
+            
+            if not output_path:
+                output_path = f"generated_music_{int(time.time())}.wav"
+            
+            if not hasattr(self, 'music_generator') or self.music_generator is None:
+                self.music_generator = AIMusicGenerator(vram_tier=self.vram_tier)
+            
+            model_name = self.music_generator.get_best_model_for_content(scene_type, duration)
+            
+            logger.info(f"Generating music with AI model {model_name}: {scene_description[:50]}...")
+            
+            success = self.music_generator.generate_music(
+                description=scene_description,
+                model_name=model_name,
+                output_path=output_path,
+                duration=duration,
+                scene_type=scene_type
+            )
+            
+            if success and os.path.exists(output_path):
+                logger.info(f"AI music generated successfully: {output_path}")
+                return output_path
+            else:
+                logger.error(f"AI music generation failed, creating fallback")
+                return self._create_fallback_music(scene_description, duration, output_path)
+            
+        except Exception as e:
+            logger.error(f"Error in AI music generation: {e}")
             return self._create_fallback_music(scene_description, duration, output_path)
     
     def _create_fallback_music(self, description: str, duration: float = 30.0, output_path: str = None) -> str:
@@ -1298,24 +1333,44 @@ class BasePipeline:
     
     def cleanup_models(self):
         """Clean up loaded models to free memory."""
-        for model_name, model in self.models.items():
-            try:
-                if hasattr(model, 'to'):
-                    model.to('cpu')
-                elif isinstance(model, dict):
-                    for key, submodel in model.items():
-                        if hasattr(submodel, 'to'):
-                            submodel.to('cpu')
-                del model
-            except Exception as e:
-                logger.warning(f"Error cleaning up model {model_name}: {e}")
-        
-        self.models.clear()
-        
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
-        logger.info("Models cleaned up")
+        try:
+            if hasattr(self, 'video_generator') and self.video_generator:
+                self.video_generator.force_cleanup_all_models()
+                self.video_generator = None
+            
+            if hasattr(self, 'voice_generator') and self.voice_generator:
+                self.voice_generator.force_cleanup_all_models()
+                self.voice_generator = None
+            
+            if hasattr(self, 'music_generator') and self.music_generator:
+                self.music_generator.force_cleanup_all_models()
+                self.music_generator = None
+            
+            for model_name, model in self.models.items():
+                try:
+                    if hasattr(model, 'to'):
+                        model.to('cpu')
+                    elif isinstance(model, dict):
+                        for key, submodel in model.items():
+                            if hasattr(submodel, 'to'):
+                                submodel.to('cpu')
+                    del model
+                except Exception as e:
+                    logger.warning(f"Error cleaning up model {model_name}: {e}")
+            
+            self.models.clear()
+            
+            import gc
+            gc.collect()
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            
+            logger.info("All models cleaned up successfully")
+            
+        except Exception as e:
+            logger.error(f"Error in model cleanup: {e}")
     
     def parse_input_script(self, input_path: str) -> Dict:
         """Parse input script from various formats."""

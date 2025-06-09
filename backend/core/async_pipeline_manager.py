@@ -13,54 +13,62 @@ from .logging_config import get_logger
 logger = get_logger("async_pipeline_manager")
 
 def _get_video_generator():
-    """Inline video generator to replace TextToVideoGenerator."""
-    class InlineVideoGenerator:
-        def __init__(self, vram_tier="medium", target_resolution=(1920, 1080)):
-            self.vram_tier = vram_tier
-            self.target_resolution = target_resolution
-            self.device = "cuda" if vram_tier != "cpu" else "cpu"
+    """Get real TextToVideoGenerator with AI model integration."""
+    try:
+        from ..pipelines.text_to_video_generator import TextToVideoGenerator
+        return TextToVideoGenerator
+    except ImportError as e:
+        logger.error(f"Failed to import TextToVideoGenerator: {e}")
         
-        def generate_video(self, prompt: str, model_name: str, output_path: str, duration: float = 5.0) -> bool:
-            """Generate video using efficient approach."""
-            try:
-                import cv2
-                import numpy as np
-                import os
-                
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                
-                duration = min(duration, 5.0)
-                fps = 24
-                frames = int(duration * fps)
-                width, height = self.target_resolution
-                
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-                
-                if not out.isOpened():
+        class FallbackVideoGenerator:
+            def __init__(self, vram_tier="medium", target_resolution=(1920, 1080)):
+                self.vram_tier = vram_tier
+                self.target_resolution = target_resolution
+                self.device = "cuda" if vram_tier != "cpu" else "cpu"
+            
+            def generate_video(self, prompt: str, model_name: str, output_path: str, duration: float = 5.0) -> bool:
+                """Fallback video generation when real models fail."""
+                try:
+                    import cv2
+                    import numpy as np
+                    import os
+                    
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    
+                    duration = min(duration, 5.0)
+                    fps = 24
+                    frames = int(duration * fps)
+                    width, height = self.target_resolution
+                    
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+                    
+                    if not out.isOpened():
+                        return False
+                    
+                    for i in range(min(frames, 120)):
+                        frame = np.zeros((height, width, 3), dtype=np.uint8)
+                        frame[:] = (30, 30, 60)
+                        
+                        try:
+                            cv2.putText(frame, "FALLBACK: AI Models Not Available", 
+                                       (50, height//2 - 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+                            cv2.putText(frame, f"Prompt: {prompt[:50]}...", 
+                                       (50, height//2 + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
+                            cv2.putText(frame, f"Frame {i+1}", 
+                                       (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (150, 150, 150), 2)
+                        except:
+                            pass
+                        
+                        out.write(frame)
+                    
+                    out.release()
+                    return True
+                    
+                except Exception as e:
                     return False
-                
-                for i in range(min(frames, 120)):
-                    frame = np.zeros((height, width, 3), dtype=np.uint8)
-                    frame[:] = (50, 50, 100)
-                    
-                    try:
-                        cv2.putText(frame, "Generated Video", 
-                                   (50, height//2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-                        cv2.putText(frame, f"Frame {i+1}", 
-                                   (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
-                    except:
-                        pass
-                    
-                    out.write(frame)
-                
-                out.release()
-                return True
-                
-            except Exception as e:
-                return False
-    
-    return InlineVideoGenerator
+        
+        return FallbackVideoGenerator
 
 class AsyncPipelineManager:
     """Async pipeline manager for coordinating video generation tasks."""
