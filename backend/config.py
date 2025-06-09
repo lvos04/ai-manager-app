@@ -52,8 +52,16 @@ ANIMATEDIFF_INFERENCE_STEPS = 50
 
 BASE_MODEL_VERSIONS = {
     "anythingv5": "v1.0",
-    "realisticvision": "v5.0", 
+    "realisticvision": "v6.0", 
     "dreamshaper": "v8.0",
+    "kenshi": "v1.0",
+    "arcane_diffusion": "v3.0",
+    "aam_xl_animemix": "v3.1",
+    "abyssorangemix3": "v3.0",
+    "meina_mix": "v11.0",
+    "mistoon": "v2.0",
+    "animagine_v3": "v3.0",
+    "realesrgan_anime": "v0.3.0",
     "absolutereality": "v1.8.1",
     "deliberate": "v3.0"
 }
@@ -67,12 +75,12 @@ MODEL_VERSIONS = {
 }
 
 CHANNEL_BASE_MODELS = {
-    "anime": ["anythingv5", "dreamshaper"],
-    "manga": ["anythingv5", "dreamshaper"], 
-    "gaming": ["realisticvision", "absolutereality"],
-    "superhero": ["realisticvision", "deliberate"],
-    "marvel_dc": ["realisticvision", "deliberate"],
-    "original_manga": ["anythingv5", "dreamshaper"]
+    "anime": ["anythingv5", "dreamshaper", "kenshi", "arcane_diffusion", "aam_xl_animemix", "abyssorangemix3", "meina_mix", "mistoon", "animagine_v3"],
+    "manga": ["anythingv5", "dreamshaper", "meina_mix", "mistoon"], 
+    "gaming": ["realisticvision", "absolutereality", "deliberate"],
+    "superhero": ["realisticvision", "deliberate", "absolutereality"],
+    "marvel_dc": ["realisticvision", "deliberate", "absolutereality"],
+    "original_manga": ["anythingv5", "dreamshaper", "meina_mix"]
 }
 
 AUDIO_MODEL_VERSIONS = {

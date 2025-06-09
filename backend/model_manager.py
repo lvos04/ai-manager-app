@@ -493,7 +493,7 @@ BASE_MODELS = {
     },
     "dreamshaper": {
         "name": "DreamShaper",
-        "description": "Dreamy, painting-like anime characters and backgrounds",
+        "description": "Best for: Versatile anime/realistic hybrid content. Style: Dreamy, painting-like aesthetic with soft colors and artistic flair, excellent for fantasy and character portraits.",
         "size": "5.5GB",
         "downloaded": False,
         "vram_required": "medium",
@@ -502,16 +502,16 @@ BASE_MODELS = {
     },
     "kenshi": {
         "name": "Kenshi",
-        "description": "Semi-realistic anime aesthetic",
+        "description": "Best for: Traditional anime characters with detailed features. Style: Semi-realistic anime aesthetic balanced between anime and realistic art, ideal for character-focused content.",
         "size": "5.2GB", 
         "downloaded": False,
         "vram_required": "medium",
-        "repo": "Kenshi/anything-v4.5",
+        "repo": "SweetLuna/Kenshi",
         "version": "v1.0"
     },
     "arcane_diffusion": {
         "name": "Arcane Diffusion",
-        "description": "League of Legends series art style",
+        "description": "Best for: Stylized animation and fantasy content. Style: League of Legends Arcane series art style with bold colors and distinctive character designs, perfect for animated storytelling.",
         "size": "4.8GB",
         "downloaded": False,
         "vram_required": "medium",
@@ -520,7 +520,7 @@ BASE_MODELS = {
     },
     "aam_xl_animemix": {
         "name": "AAM XL AnimeMix",
-        "description": "High-quality anime mixing model",
+        "description": "Best for: High-resolution anime content with exceptional detail. Style: Premium anime mixing model with crisp details and vibrant colors, ideal for professional-quality anime production.",
         "size": "6.2GB",
         "downloaded": False,
         "vram_required": "high",
@@ -529,7 +529,7 @@ BASE_MODELS = {
     },
     "abyssorangemix3": {
         "name": "AbyssOrangeMix3",
-        "description": "Popular anime model with vibrant colors",
+        "description": "Best for: Vibrant anime content with rich color palettes. Style: Popular anime model known for saturated colors and dynamic character expressions, excellent for energetic and colorful scenes.",
         "size": "5.7GB",
         "downloaded": False,
         "vram_required": "medium",
@@ -538,7 +538,7 @@ BASE_MODELS = {
     },
     "meina_mix": {
         "name": "Meina Series",
-        "description": "Modern anime aesthetic",
+        "description": "Best for: Modern anime characters with detailed facial features. Style: Contemporary anime aesthetic with focus on character detail and expression, perfect for character-driven narratives.",
         "size": "5.4GB",
         "downloaded": False,
         "vram_required": "medium",
@@ -547,7 +547,7 @@ BASE_MODELS = {
     },
     "mistoon": {
         "name": "Mistoon",
-        "description": "Classic anime look",
+        "description": "Best for: Classic anime and cartoon-style content. Style: Blend of anime and cartoon aesthetics with clean lines and traditional animation feel, ideal for nostalgic or retro anime projects.",
         "size": "5.1GB",
         "downloaded": False,
         "vram_required": "medium",
@@ -556,11 +556,29 @@ BASE_MODELS = {
     },
     "animagine_v3": {
         "name": "AnimagineV3",
-        "description": "Popular choice for anime-style generation",
+        "description": "Best for: Latest generation anime content with cutting-edge quality. Style: State-of-the-art anime generation with exceptional detail and consistency, perfect for high-quality anime production.",
         "size": "6.0GB",
         "downloaded": False,
         "vram_required": "medium",
         "repo": "Linaqruf/animagine-xl-3.0",
+        "version": "v3.0"
+    },
+    "absolutereality": {
+        "name": "Absolute Reality",
+        "description": "Best for: Photorealistic content and realistic character generation. Style: Ultra-realistic model with exceptional detail for lifelike characters and environments, ideal for realistic storytelling.",
+        "size": "5.8GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "Lykon/AbsoluteReality",
+        "version": "v1.8.1"
+    },
+    "deliberate": {
+        "name": "Deliberate",
+        "description": "Best for: Versatile realistic content with artistic flair. Style: Balanced realistic model with artistic enhancement, excellent for cinematic scenes and dramatic character portraits.",
+        "size": "5.6GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "XpucT/Deliberate",
         "version": "v3.0"
     }
 }

@@ -1062,7 +1062,8 @@ class OriginalMangaChannelPipeline(BasePipeline):
 def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
         lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
         db_run=None, db=None, render_fps: int = 24, output_fps: int = 60, 
-        frame_interpolation_enabled: bool = True, language: str = "en") -> str:
+        frame_interpolation_enabled: bool = True, llm_model: str = "microsoft/DialoGPT-medium", 
+        language: str = "en") -> str:
     """Run original manga pipeline with self-contained processing."""
     pipeline = OriginalMangaChannelPipeline(output_path=output_path)
     return pipeline.run(
