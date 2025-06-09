@@ -933,13 +933,85 @@ def get_available_models():
             "version_id": model_info["version_id"]
         })
     
+    for model_name, model_info in VOICE_MODELS.items():
+        model_dir = MODELS_DIR / "voice" / model_name
+        downloaded = check_model_downloaded(model_name, "voice")
+        
+        size_str = model_info.get("size", "1.0GB")
+        try:
+            size_mb = float(size_str.replace("GB", "").replace("MB", "")) * (1024 if "GB" in size_str else 1)
+        except (ValueError, AttributeError):
+            size_mb = 1024.0
+        
+        models.append({
+            "name": model_name,
+            "display_name": model_info["name"],
+            "description": model_info["description"],
+            "version": model_info.get("version", "1.0"),
+            "model_type": "voice",
+            "category": "audio",
+            "channel_compatibility": ["anime", "gaming", "superhero", "manga", "marvel_dc", "original_manga"],
+            "size_mb": size_mb,
+            "downloaded": downloaded,
+            "download_path": str(model_dir) if downloaded else None,
+            "model_id": model_info.get("repo", ""),
+            "vram_requirement": model_info.get("vram_required", "medium"),
+            "languages": model_info.get("languages", ["en"])
+        })
+    
+    for model_name, model_info in MUSIC_MODELS.items():
+        model_dir = MODELS_DIR / "music" / model_name
+        downloaded = check_model_downloaded(model_name, "music")
+        
+        size_str = model_info.get("size", "1.0GB")
+        try:
+            size_mb = float(size_str.replace("GB", "").replace("MB", "")) * (1024 if "GB" in size_str else 1)
+        except (ValueError, AttributeError):
+            size_mb = 1024.0
+        
+        models.append({
+            "name": model_name,
+            "display_name": model_info["name"],
+            "description": model_info["description"],
+            "version": "1.0",
+            "model_type": "music",
+            "category": "audio",
+            "channel_compatibility": ["anime", "gaming", "superhero", "manga", "marvel_dc", "original_manga"],
+            "size_mb": size_mb,
+            "downloaded": downloaded,
+            "download_path": str(model_dir) if downloaded else None,
+            "model_id": model_info.get("repo", ""),
+            "vram_requirement": model_info.get("vram_required", "medium")
+        })
+    
+    for model_name, model_info in LIPSYNC_MODELS.items():
+        model_dir = MODELS_DIR / "lipsync" / model_name
+        downloaded = check_model_downloaded(model_name, "lipsync")
+        
+        size_str = model_info.get("size", "1.0GB")
+        try:
+            size_mb = float(size_str.replace("GB", "").replace("MB", "")) * (1024 if "GB" in size_str else 1)
+        except (ValueError, AttributeError):
+            size_mb = 1024.0
+        
+        models.append({
+            "name": model_name,
+            "display_name": model_info["name"],
+            "description": model_info["description"],
+            "version": "1.0",
+            "model_type": "lipsync",
+            "category": "audio",
+            "channel_compatibility": ["anime", "manga", "marvel_dc", "original_manga"],
+            "size_mb": size_mb,
+            "downloaded": downloaded,
+            "download_path": str(model_dir) if downloaded else None,
+            "model_id": model_info.get("repo", ""),
+            "vram_requirement": model_info.get("vram_required", "medium")
+        })
+
     audio_models = {
         "whisper": {"version": "large-v3", "size": 1500.0, "desc": "Speech recognition and transcription model"},
-        "bark": {"version": "v0.0.5", "size": 800.0, "desc": "Text-to-speech synthesis model"},
-        "musicgen": {"version": "medium", "size": 1200.0, "desc": "Music generation from text prompts"},
-        "rvc": {"version": "v2.0", "size": 600.0, "desc": "Voice conversion and cloning model"},
-        "sadtalker": {"version": "v0.0.2", "size": 1000.0, "desc": "Realistic talking head generation for characters"},
-        "dreamtalk": {"version": "v1.0", "size": 1100.0, "desc": "Anime-style talking character generation"}
+        "rvc": {"version": "v2.0", "size": 600.0, "desc": "Voice conversion and cloning model"}
     }
     
     for model_name, info in audio_models.items():
