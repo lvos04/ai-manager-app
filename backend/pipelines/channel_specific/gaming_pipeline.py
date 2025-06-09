@@ -38,8 +38,8 @@ except ImportError as e:
 class GamingChannelPipeline(BasePipeline):
     """Self-contained gaming content generation pipeline with all functionality inlined."""
     
-    def __init__(self):
-        super().__init__("gaming")
+    def __init__(self, output_path: Optional[str] = None):
+        super().__init__("gaming", output_path)
         self.supports_combat = False
         self.video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv']
         self.audio_extensions = ['.mp3', '.wav', '.aac', '.ogg', '.flac']
@@ -468,10 +468,11 @@ class GamingChannelPipeline(BasePipeline):
             shorts_dir.mkdir(parents=True, exist_ok=True)
             
             main_video_path = None
+            base_path = self.output_path if self.output_path else Path("./output")
             potential_paths = [
-                self.output_path / "final" / "gaming_compilation.mp4",
-                self.output_path / "final" / "gaming_episode.mp4",
-                self.output_path / "final" / "temp_combined.mp4"
+                base_path / "final" / "gaming_compilation.mp4",
+                base_path / "final" / "gaming_episode.mp4",
+                base_path / "final" / "temp_combined.mp4"
             ]
             
             for potential_path in potential_paths:
@@ -552,7 +553,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
         db_run=None, db=None, language: str = "en") -> str:
     """Run gaming pipeline with self-contained processing."""
-    pipeline = GamingChannelPipeline()
+    pipeline = GamingChannelPipeline(output_path=output_path)
     return pipeline.run(
         input_path=input_path,
         output_path=output_path,

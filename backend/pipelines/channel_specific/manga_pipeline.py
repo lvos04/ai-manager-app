@@ -38,8 +38,8 @@ except ImportError as e:
 class MangaChannelPipeline(BasePipeline):
     """Self-contained manga content generation pipeline with all functionality inlined."""
     
-    def __init__(self):
-        super().__init__("manga")
+    def __init__(self, output_path: Optional[str] = None):
+        super().__init__("manga", output_path)
         self.combat_calls_count = 0
         self.max_combat_calls = 1
         self.scene_duration_estimates = {
@@ -1012,7 +1012,7 @@ def run(input_path: str, output_path: str, base_model: str = "anythingv5",
         db_run=None, db=None, render_fps: int = 24, output_fps: int = 60, 
         frame_interpolation_enabled: bool = True, language: str = "ja") -> str:
     """Run manga pipeline with self-contained processing."""
-    pipeline = MangaChannelPipeline()
+    pipeline = MangaChannelPipeline(output_path=output_path)
     return pipeline.run(
         input_path=input_path,
         output_path=output_path,
