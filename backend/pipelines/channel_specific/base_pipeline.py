@@ -340,7 +340,7 @@ class BasePipeline:
             
             return {"generate": emergency_generate}
     
-    def _generate_fallback_music(self, descriptions: List[str], duration: float = 30.0) -> str:
+    def _generate_fallback_music(self, descriptions: List[str] = None, duration: float = 30.0, prompt: str = None) -> str:
         """Generate fallback background music when audiocraft is not available."""
         try:
             import numpy as np
@@ -748,20 +748,38 @@ class BasePipeline:
                         retry_count += 1
                         if retry_count >= max_retries:
                             logger.error("Failed to load audiocraft after all retries, using fallback")
+                            def fallback_wrapper(**kwargs):
+                                return self._generate_fallback_music(
+                                    descriptions=kwargs.get('descriptions', []),
+                                    duration=kwargs.get('duration', 30.0),
+                                    prompt=kwargs.get('prompt', None)
+                                )
+                            def fallback_wrapper(**kwargs):
+                                return self._generate_fallback_music(
+                                    descriptions=kwargs.get('descriptions', []),
+                                    duration=kwargs.get('duration', 30.0),
+                                    prompt=kwargs.get('prompt', None)
+                                )
                             self.models[model_key] = {
-                                "type": "fallback",
+                                "type": "fallback", 
                                 "loaded": True,
-                                "generate": self._generate_fallback_music
+                                "generate": fallback_wrapper
                             }
                     except Exception as e:
                         logger.error(f"MusicGen loading failed on attempt {retry_count + 1}: {e}")
                         retry_count += 1
                         if retry_count >= max_retries:
                             logger.error("Failed to load MusicGen after all retries, using fallback")
+                            def final_fallback_wrapper(**kwargs):
+                                return self._generate_fallback_music(
+                                    descriptions=kwargs.get('descriptions', []),
+                                    duration=kwargs.get('duration', 30.0),
+                                    prompt=kwargs.get('prompt', None)
+                                )
                             self.models[model_key] = {
                                 "type": "fallback", 
                                 "loaded": True,
-                                "generate": self._generate_fallback_music
+                                "generate": fallback_wrapper
                             }
             else:
                 logger.warning(f"Unknown music model: {model_type}")
@@ -773,10 +791,16 @@ class BasePipeline:
         except Exception as e:
             logger.error(f"Critical failure loading music model {model_type}: {e}")
             logger.info("Attempting emergency fallback music generation")
+            def fallback_wrapper(**kwargs):
+                return self._generate_fallback_music(
+                    descriptions=kwargs.get('descriptions', []),
+                    duration=kwargs.get('duration', 30.0),
+                    prompt=kwargs.get('prompt', None)
+                )
             self.models[model_key] = {
                 "type": "fallback",
                 "loaded": True,
-                "generate": self._generate_fallback_music
+                "generate": fallback_wrapper
             }
             return self.models[model_key]
     def _musicgen_generate_wrapper(self, model, **kwargs):
@@ -1477,7 +1501,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             logger.error(f"Error in AI music generation: {e}")
             return self._create_fallback_music(scene_description, duration, output_path)
     
-    def _create_fallback_music(self, description: str, duration: float = 30.0, output_path: str = "") -> str:
+    def _create_fallback_music(self, description: str = None, duration: float = 30.0, output_path: str = "", prompt: str = None) -> str:
         """Create fallback background music."""
         try:
             import numpy as np

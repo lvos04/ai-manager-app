@@ -105,10 +105,54 @@ async def run_pipeline_async(project_id: int, pipeline_run_id: int, db: Session)
         scenes = await extract_scenes_from_pipeline(pipeline_module, input_path, channel_type)
         
         if not scenes:
-            scenes = [
-                {"description": "Scene 1", "dialogue": "Hello world", "duration": 10.0},
-                {"description": "Scene 2", "dialogue": "This is a test", "duration": 8.0}
-            ]
+            logger.warning("No scenes extracted from script, attempting to parse script directly")
+            try:
+                with open(input_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                if content.strip():
+                    import yaml
+                    import json
+                    
+                    try:
+                        if input_path.endswith('.yaml') or input_path.endswith('.yml'):
+                            data = yaml.safe_load(content)
+                            if isinstance(data, dict) and 'scenes' in data:
+                                scenes = data['scenes']
+                            elif isinstance(data, list):
+                                scenes = data
+                        elif input_path.endswith('.json'):
+                            data = json.loads(content)
+                            if isinstance(data, dict) and 'scenes' in data:
+                                scenes = data['scenes']
+                            elif isinstance(data, list):
+                                scenes = data
+                        else:
+                            lines = content.strip().split('\n')
+                            scenes = []
+                            for i, line in enumerate(lines):
+                                if line.strip():
+                                    scenes.append({
+                                        "description": f"Scene {i+1}",
+                                        "dialogue": line.strip(),
+                                        "duration": 10.0
+                                    })
+                    except Exception as parse_error:
+                        logger.error(f"Error parsing script file: {parse_error}")
+                        scenes = []
+                
+                if not scenes:
+                    scenes = [
+                        {"description": "Scene 1", "dialogue": "Hello world", "duration": 10.0},
+                        {"description": "Scene 2", "dialogue": "This is a test", "duration": 8.0}
+                    ]
+                    
+            except Exception as e:
+                logger.error(f"Error reading script file: {e}")
+                scenes = [
+                    {"description": "Scene 1", "dialogue": "Hello world", "duration": 10.0},
+                    {"description": "Scene 2", "dialogue": "This is a test", "duration": 8.0}
+                ]
         
         pipeline_config = {
             "base_model": base_model,

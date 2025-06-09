@@ -8,6 +8,8 @@ from .qt_compat import (
 import requests
 import os
 from config import API_HOST, API_PORT
+from backend.config import CHANNEL_BASE_MODELS
+from backend.model_manager import BASE_MODELS
 from .widgets.multi_language_widget import MultiLanguageSelectionWidget
 from .styles import get_app_stylesheet, get_header_style, get_warning_style, get_success_style, get_subheader_style, get_info_style
 
@@ -885,7 +887,7 @@ class NewProjectDialog(QDialog):
     
     def validate_selection(self):
         """Validate that a base model is selected and at least one LoRA is available."""
-        base_model = self.base_model_combo.currentText()
+        base_model = self.base_model_combo.currentData() or self.base_model_combo.currentText()
         selected_loras = self.lora_selection_widget.get_selected_loras()
         
         if "No compatible" in base_model:
@@ -907,7 +909,7 @@ class NewProjectDialog(QDialog):
             super().accept()
     
     def get_project_data(self):
-        base_model = self.base_model_combo.currentText()
+        base_model = self.base_model_combo.currentData() or self.base_model_combo.currentText()
         if "(" in base_model:
             base_model = base_model.split("(")[0].strip()
         
