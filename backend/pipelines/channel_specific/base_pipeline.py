@@ -263,35 +263,62 @@ class BasePipeline:
             
             logger.info(f"Loading LLM model with {self.vram_tier} VRAM optimizations")
             
-            if self.vram_tier == "low":
-                model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-            elif self.vram_tier == "medium":
-                model_id = "microsoft/phi-2"
-            else:
-                model_id = "meta-llama/Llama-2-7b-chat-hf"
+            model_options = [
+                "gpt2-medium", 
+                "gpt2",
+                "distilgpt2"
+            ]
             
-            tokenizer = AutoTokenizer.from_pretrained(model_id)
-            model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                low_cpu_mem_usage=True,
-                device_map="auto" if self.vram_tier == "low" else None
-            )
+            for model_id in model_options:
+                try:
+                    logger.info(f"Attempting to load LLM model: {model_id}")
             
-            if torch.cuda.is_available() and self.vram_tier != "low":
-                model = model.to(self.device)
+                    tokenizer = AutoTokenizer.from_pretrained(model_id)
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_id,
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                        low_cpu_mem_usage=True,
+                        device_map="auto" if self.vram_tier == "low" else None
+                    )
+                    
+                    if torch.cuda.is_available() and self.vram_tier != "low":
+                        model = model.to(self.device)
+                    
+                    self.models["llm"] = {
+                        "model": model,
+                        "tokenizer": tokenizer,
+                        "generate": lambda prompt, max_tokens=100: self._generate_with_llm(model, tokenizer, prompt, max_tokens)
+                    }
+                    logger.info(f"LLM model {model_id} loaded successfully")
+                    return self.models["llm"]
+                    
+                except Exception as model_error:
+                    logger.warning(f"Failed to load {model_id}: {model_error}")
+                    continue
             
-            self.models["llm"] = {
-                "model": model,
-                "tokenizer": tokenizer,
-                "generate": lambda prompt, max_tokens=100: self._generate_with_llm(model, tokenizer, prompt, max_tokens)
-            }
-            logger.info("LLM model loaded successfully")
+            logger.warning("All LLM models failed, using simple fallback")
+            def fallback_generate(prompt, max_tokens=100):
+                import random
+                # Simple template-based generation
+                if "title" in prompt.lower():
+                    return f"Epic {getattr(self, 'channel_type', 'content').title()} Adventure - Episode {random.randint(1, 100)}"
+                elif "description" in prompt.lower():
+                    return f"An amazing {getattr(self, 'channel_type', 'content')} story with incredible action and adventure!"
+                elif "next episode" in prompt.lower():
+                    return "1. The adventure continues\n2. New challenges await\n3. Epic conclusion"
+                else:
+                    return "Generated content for your project"
+            
+            self.models["llm"] = {"generate": fallback_generate}
             return self.models["llm"]
             
         except Exception as e:
-            logger.error(f"Failed to load LLM model: {e}")
-            return None
+            logger.error(f"Failed to load any LLM model: {e}")
+            import random
+            def emergency_generate(prompt, max_tokens=100):
+                return f"Generated {getattr(self, 'channel_type', 'content')} content"
+            
+            return {"generate": emergency_generate}
     
     def _generate_fallback_music(self, descriptions: List[str], duration: float = 30.0) -> str:
         """Generate fallback background music when audiocraft is not available."""
@@ -316,30 +343,115 @@ class BasePipeline:
             return ""
     
     def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
-        """Generate text using loaded LLM model."""
+        """Generate text using loaded LLM model with timeout protection."""
         try:
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
-            if torch.cuda.is_available() and self.vram_tier != "low":
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            import torch
+            import signal
             
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs,
-                    max_new_tokens=max_tokens,
-                    do_sample=True,
-                    temperature=0.7,
-                    pad_token_id=tokenizer.eos_token_id
-                )
+            def timeout_handler(signum, frame):
+                raise TimeoutError("LLM generation timeout")
             
-            generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            if prompt in generated_text:
-                generated_text = generated_text.replace(prompt, "").strip()
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(30)  # 30 second timeout
             
-            return generated_text
+            try:
+                # Format prompt for better content generation
+                if "title" in prompt.lower():
+                    formatted_prompt = f"YouTube video title about {prompt.replace('Generate a YouTube title for', '').replace('Create an engaging title for', '').strip()}: "
+                elif "description" in prompt.lower():
+                    formatted_prompt = f"YouTube video description about {prompt.replace('Generate a YouTube description for', '').strip()}: "
+                elif "next episode" in prompt.lower():
+                    formatted_prompt = f"Next episode suggestions for {prompt.replace('Generate next episode suggestions for', '').strip()}: 1."
+                else:
+                    formatted_prompt = f"{prompt}: "
+                
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+                
+                inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=True, max_length=256)
+                if torch.cuda.is_available() and self.vram_tier != "low":
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                
+                with torch.no_grad():
+                    outputs = model.generate(
+                        **inputs,
+                        max_new_tokens=min(max_tokens, 50),  # Limit tokens for faster generation
+                        do_sample=True,
+                        temperature=0.8,
+                        top_p=0.9,
+                        repetition_penalty=1.1,
+                        pad_token_id=tokenizer.eos_token_id,
+                        eos_token_id=tokenizer.eos_token_id,
+                        num_return_sequences=1,
+                        num_beams=1,  # Faster generation
+                        early_stopping=True
+                    )
+                
+                generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+                
+                if formatted_prompt in generated_text:
+                    response = generated_text.replace(formatted_prompt, "").strip()
+                else:
+                    response = generated_text.strip()
+                
+                if response:
+                    response = response.replace('\n', ' ').strip()
+                    
+                    if "title" in prompt.lower():
+                        response = response.replace('YouTube video title about', '').replace('Title:', '').strip()
+                        response = response.replace('Create a YouTube Title for', '').replace('Description (optional)', '').strip()
+                        
+                        if '.' in response:
+                            response = response.split('.')[0].strip()
+                        if response.endswith(('!', '?')):
+                            pass  # Keep exclamation/question marks
+                        elif not response.endswith(('!', '?', ':')):
+                            response = response.strip() + '!'
+                    
+                    if len(response) < 5 or response.lower() in ['title', 'description', 'content', 'your name, your profile picture and more']:
+                        signal.alarm(0)  # Cancel timeout
+                        return self._generate_fallback_content_for_prompt(prompt)
+                    
+                    signal.alarm(0)  # Cancel timeout
+                    return response[:200]  # Reasonable max length
+                else:
+                    signal.alarm(0)  # Cancel timeout
+                    return self._generate_fallback_content_for_prompt(prompt)
+                
+            except TimeoutError:
+                logger.warning("LLM generation timed out, using fallback")
+                return self._generate_fallback_content_for_prompt(prompt)
+            finally:
+                signal.alarm(0)  # Ensure timeout is cancelled
             
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
-            return ""
+            return self._generate_fallback_content_for_prompt(prompt)
+    
+    def _generate_fallback_content_for_prompt(self, prompt: str) -> str:
+        """Generate fallback content based on prompt type."""
+        import random
+        prompt_lower = prompt.lower()
+        channel_type = getattr(self, 'channel_type', 'content')
+        
+        if "title" in prompt_lower:
+            titles = [
+                f"Epic {channel_type.title()} Adventure - Ultimate Battle Begins!",
+                f"Amazing {channel_type.title()} Story - Heroes Rise!",
+                f"Incredible {channel_type.title()} Action - New Episode!",
+                f"Best {channel_type.title()} Content - Must Watch!",
+                f"Ultimate {channel_type.title()} Experience - Don't Miss!"
+            ]
+            return random.choice(titles)
+            
+        elif "description" in prompt_lower:
+            return f"Join us for an incredible {channel_type} adventure filled with amazing characters, epic battles, and unforgettable moments! This episode features stunning visuals, compelling storytelling, and all the action you love. Don't forget to like, subscribe, and hit the notification bell for more amazing {channel_type} content! Experience the ultimate in {channel_type} entertainment with professional-quality animation and immersive storytelling."
+            
+        elif "next episode" in prompt_lower:
+            return "1. Epic character development and new power revelations\n2. Intense battles with unexpected plot twists\n3. Emotional storylines and character relationships\n4. New challenges and adventures await\n5. Spectacular action sequences and dramatic moments"
+            
+        else:
+            return f"High-quality {channel_type} content featuring amazing characters and epic storylines."
     
     def _load_video_model(self, model_name: str = "animatediff_v2_sdxl"):
         """Load video generation model."""
@@ -489,17 +601,21 @@ class BasePipeline:
                     'numpy.core.multiarray.dtype'
                 ])
                 
-                with torch.serialization.safe_globals([
-                    'numpy.core.multiarray.scalar',
-                    'numpy.core.multiarray._reconstruct', 
-                    'numpy.ndarray',
-                    'numpy.dtype',
-                    'numpy.core.numeric'
-                ]):
-                    from bark import SAMPLE_RATE, generate_audio, preload_models
-                    logger.info(f"Loading Bark model with {self.vram_tier} VRAM optimizations")
-                    preload_models()
-                    
+                import torch
+                
+                original_load = torch.load
+                def patched_load(*args, **kwargs):
+                    kwargs['weights_only'] = False
+                    return original_load(*args, **kwargs)
+                torch.load = patched_load
+                
+                from bark import SAMPLE_RATE, generate_audio, preload_models
+                logger.info(f"Loading Bark model with {self.vram_tier} VRAM optimizations")
+                preload_models()
+                
+                # Restore original torch.load
+                torch.load = original_load
+                
                 def bark_generate_wrapper(text, voice_preset="v2/en_speaker_6"):
                     """Wrapper to handle Bark generation with proper error handling."""
                     try:
@@ -1230,31 +1346,7 @@ class BasePipeline:
                 "locations": [{"name": "Location1"}]
             }
     
-    def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
-        """Generate text using LLM model."""
-        try:
-            import torch
-            
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
-            if torch.cuda.is_available():
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs,
-                    max_length=inputs["input_ids"].shape[1] + max_tokens,
-                    num_return_sequences=1,
-                    temperature=0.8,
-                    do_sample=True,
-                    pad_token_id=tokenizer.eos_token_id
-                )
-            
-            generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            return generated_text[len(prompt):].strip()
-            
-        except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
-            return f"Generated content for: {prompt}"
+
 
     def extract_highlights_from_video(self, video_path: str, num_highlights: int = 5) -> List[Dict]:
         """Extract highlight moments from main video using motion analysis."""
@@ -1493,41 +1585,67 @@ class BasePipeline:
             
             channel_type = getattr(self, 'channel_type', 'content')
             
-            title_prompt = f"Generate an engaging YouTube title for a {channel_type} video with {len(scenes)} scenes. Make it exciting and clickable for {channel_type} fans. Language: {language}"
+            # Extract character names for better title generation
+            character_names = []
+            for scene in scenes:
+                if isinstance(scene, dict) and 'characters' in scene:
+                    for char in scene['characters']:
+                        if isinstance(char, dict) and 'name' in char:
+                            character_names.append(char['name'])
+                        elif isinstance(char, str):
+                            character_names.append(char)
+            
+            unique_chars = list(set(character_names))[:2]
+            char_string = " and ".join(unique_chars) if unique_chars else "Epic Heroes"
+            
+            title_prompt = f"Write a short YouTube title for {channel_type} content featuring {char_string}. Maximum 50 characters. Example: 'Epic Battle Adventure' or 'Heroes Unite'. Title only:"
             
             llm_model = self.load_llm_model()
             if llm_model:
-                title = self._generate_with_llm(llm_model["model"], llm_model["tokenizer"], title_prompt, max_tokens=150)
+                title = llm_model["generate"](title_prompt, max_tokens=15)
                 if not title or len(title.strip()) == 0:
                     title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
-                elif not title.strip().endswith(('.', '!', '?')):
-                    title = title.strip() + "!"
+                else:
+                    title = title.strip()
+                    title = title.replace('"', '').replace("'", "").replace('-!', '').replace('"-', '')
+                    if title.startswith('"') and title.endswith('"'):
+                        title = title[1:-1]
+                    if not title.endswith(('.', '!', '?')):
+                        title = title + "!"
             else:
                 title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
             
             if not title or len(title.strip()) == 0:
                 title = f"Amazing {channel_type.title()} Content - Episode {random.randint(1, 100)}"
             
-            description_prompt = f"Generate a detailed YouTube description for a {channel_type} episode with {len(scenes)} scenes. Include character introductions, plot summary, and engaging hooks for anime/manga fans. Language: {language}"
+            description_prompt = f"Write YouTube description for {channel_type} episode. Include plot summary. Keep under 100 words:"
             
             if llm_model:
-                description = self._generate_with_llm(llm_model["model"], llm_model["tokenizer"], description_prompt, max_tokens=800)
+                description = llm_model["generate"](description_prompt, max_tokens=50)
                 if not description or len(description.strip()) == 0:
                     description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
-                elif not description.strip().endswith(('.', '!', '?')):
-                    description = description.strip() + "."
+                else:
+                    description = description.strip()
+                    description = description.replace('Title: [Show spoiler]', '').replace('Example Tit...', '')
+                    description = description.replace('Title:', '').strip()
+                    if description.startswith('"') and description.endswith('"'):
+                        description = description[1:-1]
+                    if not description.endswith(('.', '!', '?')):
+                        description = description + "."
             else:
                 description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
             
             if not description or len(description.strip()) == 0:
                 description = f"Amazing {channel_type} content with incredible storytelling and epic scenes!"
             
-            next_episode_prompt = f"Based on this {channel_type} episode, suggest 3 compelling storylines for the next episode. Be creative and engaging for anime/manga fans."
+            next_episode_prompt = f"List 3 next episode ideas for {channel_type}. Format: 1. Idea one 2. Idea two 3. Idea three"
             
             if llm_model:
-                next_suggestions = self._generate_with_llm(llm_model["model"], llm_model["tokenizer"], next_episode_prompt, max_tokens=600)
+                next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=30)
                 if not next_suggestions or len(next_suggestions.strip()) == 0:
                     next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
+                else:
+                    next_suggestions = next_suggestions.strip()
             else:
                 next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
             
@@ -1551,6 +1669,27 @@ class BasePipeline:
                 "scenes_count": len(scenes),
                 "channel_type": channel_type
             }
+            
+            from pathlib import Path
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            title_file = output_dir / "title.txt"
+            description_file = output_dir / "description.txt"
+            tags_file = output_dir / "tags.txt"
+            next_episode_file = output_dir / "next_episode.txt"
+            
+            with open(title_file, 'w', encoding='utf-8') as f:
+                f.write(f"Title: {title.strip()}\n\nGenerated for {channel_type} episode with {len(scenes)} scenes")
+            
+            with open(description_file, 'w', encoding='utf-8') as f:
+                f.write(f"Title: \"{title.strip()}\"\n\n{description.strip()}\n\n🔥 Don't miss the next episode!\n👍 Like and Subscribe for more {channel_type} content!")
+            
+            with open(tags_file, 'w', encoding='utf-8') as f:
+                f.write(", ".join(tags))
+            
+            with open(next_episode_file, 'w', encoding='utf-8') as f:
+                f.write(f"Next Episode Suggestions:\n\n{next_suggestions.strip()}")
             
             metadata_file = output_dir / f"youtube_metadata_{language}.json"
             with open(metadata_file, 'w', encoding='utf-8') as f:
