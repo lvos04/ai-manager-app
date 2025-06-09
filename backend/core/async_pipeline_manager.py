@@ -149,9 +149,9 @@ class AsyncPipelineManager:
                 "processing_time": time.time() - start_time
             }
     
-    async def execute_pipeline_async(self, pipeline_config):
-        """Execute pipeline asynchronously."""
-        return await self.run_pipeline(pipeline_config.get("scenes", []), pipeline_config)
+    async def execute_pipeline_async(self, scenes, pipeline_config):
+        """Execute pipeline asynchronously with scenes and config."""
+        return await self.run_pipeline(scenes, pipeline_config)
 
 def _get_pipeline_utils():
     """Inline pipeline utilities to replace pipeline_utils."""
