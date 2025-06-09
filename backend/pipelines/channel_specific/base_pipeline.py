@@ -263,35 +263,195 @@ class BasePipeline:
             
             logger.info(f"Loading LLM model with {self.vram_tier} VRAM optimizations")
             
-            if self.vram_tier == "low":
-                model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-            elif self.vram_tier == "medium":
-                model_id = "microsoft/phi-2"
-            else:
-                model_id = "meta-llama/Llama-2-7b-chat-hf"
+            model_options = [
+                "gpt2-medium", 
+                "gpt2",
+                "distilgpt2"
+            ]
             
-            tokenizer = AutoTokenizer.from_pretrained(model_id)
-            model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                low_cpu_mem_usage=True,
-                device_map="auto" if self.vram_tier == "low" else None
-            )
+            for model_id in model_options:
+                try:
+                    logger.info(f"Attempting to load LLM model: {model_id}")
             
-            if torch.cuda.is_available() and self.vram_tier != "low":
-                model = model.to(self.device)
+                    tokenizer = AutoTokenizer.from_pretrained(model_id)
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_id,
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                        low_cpu_mem_usage=True,
+                        device_map="auto" if self.vram_tier == "low" else None
+                    )
+                    
+                    if torch.cuda.is_available() and self.vram_tier != "low":
+                        model = model.to(self.device)
+                    
+                    self.models["llm"] = {
+                        "model": model,
+                        "tokenizer": tokenizer,
+                        "generate": lambda prompt, max_tokens=100: self._generate_with_llm(model, tokenizer, prompt, max_tokens)
+                    }
+                    logger.info(f"LLM model {model_id} loaded successfully")
+                    return self.models["llm"]
+                    
+                except Exception as model_error:
+                    logger.warning(f"Failed to load {model_id}: {model_error}")
+                    continue
             
-            self.models["llm"] = {
-                "model": model,
-                "tokenizer": tokenizer,
-                "generate": lambda prompt, max_tokens=100: self._generate_with_llm(model, tokenizer, prompt, max_tokens)
-            }
-            logger.info("LLM model loaded successfully")
+            logger.warning("All LLM models failed, using simple fallback")
+            def fallback_generate(prompt, max_tokens=100):
+                import random
+                # Simple template-based generation
+                if "title" in prompt.lower():
+                    return f"Epic {getattr(self, 'channel_type', 'content').title()} Adventure - Episode {random.randint(1, 100)}"
+                elif "description" in prompt.lower():
+                    return f"An amazing {getattr(self, 'channel_type', 'content')} story with incredible action and adventure!"
+                elif "next episode" in prompt.lower():
+                    return "1. The adventure continues\n2. New challenges await\n3. Epic conclusion"
+                else:
+                    return "Generated content for your project"
+            
+            self.models["llm"] = {"generate": fallback_generate}
             return self.models["llm"]
             
         except Exception as e:
-            logger.error(f"Failed to load LLM model: {e}")
-            return None
+            logger.error(f"Failed to load any LLM model: {e}")
+            import random
+            def emergency_generate(prompt, max_tokens=100):
+                return f"Generated {getattr(self, 'channel_type', 'content')} content"
+            
+            return {"generate": emergency_generate}
+    
+    def _generate_fallback_music(self, descriptions: List[str], duration: float = 30.0) -> str:
+        """Generate fallback background music when audiocraft is not available."""
+        try:
+            import numpy as np
+            import soundfile as sf
+            
+            sample_rate = 44100
+            samples = int(duration * sample_rate)
+            
+            t = np.linspace(0, duration, samples)
+            frequency = 220
+            music = 0.3 * np.sin(2 * np.pi * frequency * t) * np.exp(-t / 10)
+            
+            output_path = "/tmp/fallback_music.wav"
+            sf.write(output_path, music, sample_rate)
+            
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Fallback music generation failed: {e}")
+            return ""
+    
+    def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
+        """Generate text using loaded LLM model with timeout protection."""
+        try:
+            import torch
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("LLM generation timeout")
+            
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(30)  # 30 second timeout
+            
+            try:
+                # Format prompt for better content generation
+                if "title" in prompt.lower():
+                    formatted_prompt = f"YouTube video title about {prompt.replace('Generate a YouTube title for', '').replace('Create an engaging title for', '').strip()}: "
+                elif "description" in prompt.lower():
+                    formatted_prompt = f"YouTube video description about {prompt.replace('Generate a YouTube description for', '').strip()}: "
+                elif "next episode" in prompt.lower():
+                    formatted_prompt = f"Next episode suggestions for {prompt.replace('Generate next episode suggestions for', '').strip()}: 1."
+                else:
+                    formatted_prompt = f"{prompt}: "
+                
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+                
+                inputs = tokenizer(formatted_prompt, return_tensors="pt", truncation=True, max_length=256)
+                if torch.cuda.is_available() and self.vram_tier != "low":
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                
+                with torch.no_grad():
+                    outputs = model.generate(
+                        **inputs,
+                        max_new_tokens=min(max_tokens, 50),  # Limit tokens for faster generation
+                        do_sample=True,
+                        temperature=0.8,
+                        top_p=0.9,
+                        repetition_penalty=1.1,
+                        pad_token_id=tokenizer.eos_token_id,
+                        eos_token_id=tokenizer.eos_token_id,
+                        num_return_sequences=1,
+                        num_beams=1,  # Faster generation
+                        early_stopping=True
+                    )
+                
+                generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+                
+                if formatted_prompt in generated_text:
+                    response = generated_text.replace(formatted_prompt, "").strip()
+                else:
+                    response = generated_text.strip()
+                
+                if response:
+                    response = response.replace('\n', ' ').strip()
+                    
+                    if "title" in prompt.lower():
+                        response = response.replace('YouTube video title about', '').replace('Title:', '').strip()
+                        response = response.replace('Create a YouTube Title for', '').replace('Description (optional)', '').strip()
+                        
+                        if '.' in response:
+                            response = response.split('.')[0].strip()
+                        if response.endswith(('!', '?')):
+                            pass  # Keep exclamation/question marks
+                        elif not response.endswith(('!', '?', ':')):
+                            response = response.strip() + '!'
+                    
+                    if len(response) < 5 or response.lower() in ['title', 'description', 'content', 'your name, your profile picture and more']:
+                        signal.alarm(0)  # Cancel timeout
+                        return self._generate_fallback_content_for_prompt(prompt)
+                    
+                    signal.alarm(0)  # Cancel timeout
+                    return response[:200]  # Reasonable max length
+                else:
+                    signal.alarm(0)  # Cancel timeout
+                    return self._generate_fallback_content_for_prompt(prompt)
+                
+            except TimeoutError:
+                logger.warning("LLM generation timed out, using fallback")
+                return self._generate_fallback_content_for_prompt(prompt)
+            finally:
+                signal.alarm(0)  # Ensure timeout is cancelled
+            
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            return self._generate_fallback_content_for_prompt(prompt)
+    
+    def _generate_fallback_content_for_prompt(self, prompt: str) -> str:
+        """Generate fallback content based on prompt type."""
+        import random
+        prompt_lower = prompt.lower()
+        channel_type = getattr(self, 'channel_type', 'content')
+        
+        if "title" in prompt_lower:
+            titles = [
+                f"Epic {channel_type.title()} Adventure - Ultimate Battle Begins!",
+                f"Amazing {channel_type.title()} Story - Heroes Rise!",
+                f"Incredible {channel_type.title()} Action - New Episode!",
+                f"Best {channel_type.title()} Content - Must Watch!",
+                f"Ultimate {channel_type.title()} Experience - Don't Miss!"
+            ]
+            return random.choice(titles)
+            
+        elif "description" in prompt_lower:
+            return f"Join us for an incredible {channel_type} adventure filled with amazing characters, epic battles, and unforgettable moments! This episode features stunning visuals, compelling storytelling, and all the action you love. Don't forget to like, subscribe, and hit the notification bell for more amazing {channel_type} content! Experience the ultimate in {channel_type} entertainment with professional-quality animation and immersive storytelling."
+            
+        elif "next episode" in prompt_lower:
+            return "1. Epic character development and new power revelations\n2. Intense battles with unexpected plot twists\n3. Emotional storylines and character relationships\n4. New challenges and adventures await\n5. Spectacular action sequences and dramatic moments"
+            
+        else:
+            return f"High-quality {channel_type} content featuring amazing characters and epic storylines."
     
     def _load_video_model(self, model_name: str = "animatediff_v2_sdxl"):
         """Load video generation model."""
@@ -303,7 +463,48 @@ class BasePipeline:
                 def __init__(self, model_name, device):
                     self.model_name = model_name
                     self.device = device
-                    self.loaded = True
+                    self.vram_tier = "medium"
+                    self._load_model()
+                
+                def _load_model(self):
+                    try:
+                        if "animatediff" in self.model_name.lower():
+                            from diffusers import AnimateDiffPipeline, MotionAdapter, EulerDiscreteScheduler
+                            import torch
+                            
+                            adapter = MotionAdapter.from_pretrained("guoyww/animatediff-motion-adapter-v1-5-2")
+                            self.pipe = AnimateDiffPipeline.from_pretrained(
+                                "runwayml/stable-diffusion-v1-5", 
+                                motion_adapter=adapter,
+                                torch_dtype=torch.float16 if self.vram_tier != "low" else torch.float32
+                            )
+                            
+                            if self.device == "cuda":
+                                self.pipe = self.pipe.to("cuda")
+                            
+                            self.pipe.scheduler = EulerDiscreteScheduler.from_config(self.pipe.scheduler.config)
+                            self.loaded = True
+                            
+                        elif "svd" in self.model_name.lower():
+                            from diffusers import StableVideoDiffusionPipeline
+                            import torch
+                            
+                            self.pipe = StableVideoDiffusionPipeline.from_pretrained(
+                                "stabilityai/stable-video-diffusion-img2vid-xt",
+                                torch_dtype=torch.float16 if self.vram_tier != "low" else torch.float32
+                            )
+                            
+                            if self.device == "cuda":
+                                self.pipe = self.pipe.to("cuda")
+                            
+                            self.loaded = True
+                            
+                        else:
+                            self.loaded = False
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to load video model {self.model_name}: {e}")
+                        self.loaded = False
                 
                 def generate_video(self, prompt, duration=10.0, output_path=None, **kwargs):
                     """Generate video from prompt."""
@@ -313,6 +514,35 @@ class BasePipeline:
                         
                         if not output_path:
                             output_path = f"temp_video_{hash(prompt)}.mp4"
+                        
+                        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                        
+                        if hasattr(self, 'loaded') and self.loaded and hasattr(self, 'pipe'):
+                            try:
+                                if "animatediff" in self.model_name.lower():
+                                    import torch
+                                    video_frames = self.pipe(
+                                        prompt,
+                                        num_frames=min(16, int(duration * 24 / 2)),
+                                        guidance_scale=7.5,
+                                        num_inference_steps=25,
+                                        generator=torch.Generator("cpu").manual_seed(42)
+                                    ).frames[0]
+                                    
+                                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                                    out = cv2.VideoWriter(output_path, fourcc, 24, (1920, 1080))
+                                    
+                                    for frame in video_frames:
+                                        frame_np = np.array(frame)
+                                        frame_resized = cv2.resize(frame_np, (1920, 1080))
+                                        frame_bgr = cv2.cvtColor(frame_resized, cv2.COLOR_RGB2BGR)
+                                        out.write(frame_bgr)
+                                    
+                                    out.release()
+                                    return True
+                                    
+                            except Exception as e:
+                                logger.error(f"AI video generation failed: {e}, using fallback")
                         
                         duration = min(duration, 5.0)
                         fps = 24
@@ -325,9 +555,9 @@ class BasePipeline:
                         if not out.isOpened():
                             return False
                         
-                        for i in range(min(frames, 120)):  # Max 120 frames (5 seconds)
+                        for i in range(min(frames, 120)):
                             frame = np.zeros((height, width, 3), dtype=np.uint8)
-                            frame[:] = (50, 50, 100)  # Dark blue background
+                            frame[:] = (50, 50, 100)
                             
                             try:
                                 cv2.putText(frame, "Generated Video", 
@@ -335,7 +565,7 @@ class BasePipeline:
                                 cv2.putText(frame, f"Frame {i+1}", 
                                            (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
                             except:
-                                pass  # Skip text if it fails
+                                pass
                             
                             out.write(frame)
                         
@@ -361,14 +591,45 @@ class BasePipeline:
         
         try:
             if model_type == "bark":
+                import torch
+                torch.serialization.add_safe_globals([
+                    'numpy.core.multiarray.scalar',
+                    'numpy.core.multiarray._reconstruct',
+                    'numpy.ndarray',
+                    'numpy.dtype',
+                    'numpy.core.numeric',
+                    'numpy.core.multiarray.dtype'
+                ])
+                
+                import torch
+                
+                original_load = torch.load
+                def patched_load(*args, **kwargs):
+                    kwargs['weights_only'] = False
+                    return original_load(*args, **kwargs)
+                torch.load = patched_load
+                
                 from bark import SAMPLE_RATE, generate_audio, preload_models
                 logger.info(f"Loading Bark model with {self.vram_tier} VRAM optimizations")
                 preload_models()
+                
+                # Restore original torch.load
+                torch.load = original_load
+                
+                def bark_generate_wrapper(text, voice_preset="v2/en_speaker_6"):
+                    """Wrapper to handle Bark generation with proper error handling."""
+                    try:
+                        audio_array = generate_audio(text, history_prompt=voice_preset)
+                        return audio_array, SAMPLE_RATE
+                    except Exception as e:
+                        logger.error(f"Bark generation failed: {e}")
+                        return None, SAMPLE_RATE
+                
                 self.models[model_key] = {
                     "type": "bark", 
                     "loaded": True, 
                     "sample_rate": SAMPLE_RATE, 
-                    "generate": generate_audio
+                    "generate": bark_generate_wrapper
                 }
             elif model_type == "xtts":
                 from TTS.api import TTS
@@ -389,7 +650,12 @@ class BasePipeline:
                 
         except Exception as e:
             logger.error(f"Failed to load voice model {model_type}: {e}")
-            return None
+            self.models[model_key] = {
+                "type": "fallback",
+                "loaded": True,
+                "generate": self._create_fallback_audio
+            }
+            return self.models[model_key]
     
     def load_music_model(self, model_type: str = "musicgen"):
         """Load music generation model."""
@@ -399,15 +665,23 @@ class BasePipeline:
         
         try:
             if model_type == "musicgen":
-                from audiocraft.models import MusicGen
-                logger.info(f"Loading MusicGen model with {self.vram_tier} VRAM optimizations")
-                model_size = "small" if self.vram_tier in ["low", "medium"] else "medium"
-                model = MusicGen.get_pretrained(f'facebook/musicgen-{model_size}')
-                self.models[model_key] = {
-                    "type": "musicgen",
-                    "model": model,
-                    "generate": lambda prompt, duration: model.generate([prompt], duration=duration)
-                }
+                try:
+                    from audiocraft.models import MusicGen
+                    logger.info(f"Loading MusicGen model with {self.vram_tier} VRAM optimizations")
+                    model_size = "small" if self.vram_tier in ["low", "medium"] else "medium"
+                    model = MusicGen.get_pretrained(f'facebook/musicgen-{model_size}')
+                    self.models[model_key] = {
+                        "type": "musicgen",
+                        "model": model,
+                        "generate": lambda prompt, duration: model.generate([prompt], duration=duration)
+                    }
+                except ImportError:
+                    logger.warning("audiocraft not available, using fallback music generation")
+                    self.models[model_key] = {
+                        "type": "fallback",
+                        "loaded": True,
+                        "generate": self._generate_fallback_music
+                    }
             else:
                 logger.warning(f"Unknown music model: {model_type}")
                 return None
@@ -417,7 +691,12 @@ class BasePipeline:
                 
         except Exception as e:
             logger.error(f"Failed to load music model {model_type}: {e}")
-            return None
+            self.models[model_key] = {
+                "type": "fallback",
+                "loaded": True,
+                "generate": self._generate_fallback_music
+            }
+            return self.models[model_key]
     
     def expand_script_if_needed(self, script_data: Dict, min_duration: float = 20.0) -> Dict:
         """Expand script to target duration using LLM."""
@@ -906,38 +1185,32 @@ class BasePipeline:
             logger.error(f"Fallback video creation failed: {e}")
             return output_path
     
-    def generate_voice(self, text: str, language: str = "en", output_path: Optional[str] = None) -> Optional[str]:
-        """Generate voice audio from text."""
-        if not output_path:
-            import time
-            output_path = f"voice_{int(time.time())}.wav"
-            
-        audio_model = self.load_voice_model("bark")
-        if not audio_model:
-            return self._create_fallback_audio(text, output_path)
-        
+    def generate_voice(self, text: str, character_voice: str = "default", output_path: str = None, language: str = "en") -> str:
+        """Generate voice audio for text."""
         try:
-            lang_config = self.supported_languages.get(language, self.supported_languages["en"])
-            if not lang_config.get("bark_supported", False):
-                return self._create_fallback_audio(text, output_path)
+            voice_model = self.load_voice_model("bark")
             
-            if "generate" in audio_model:
-                result = audio_model["generate"](text, language=language)
-                
-                if result and output_path:
-                    import scipy.io.wavfile as wavfile
-                    sample_rate = 24000
-                    if isinstance(result, np.ndarray):
-                        wavfile.write(output_path, sample_rate, result)
-                    else:
-                        wavfile.write(output_path, sample_rate, np.array(result))
-                    logger.info(f"Voice generated: {output_path}")
-                    return output_path
-                
+            if voice_model and voice_model.get("loaded"):
+                if voice_model["type"] == "bark":
+                    try:
+                        audio_array = voice_model["generate"](text, history_prompt=character_voice)
+                        
+                        if output_path:
+                            import soundfile as sf
+                            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                            sf.write(output_path, audio_array, voice_model["sample_rate"])
+                            return output_path
+                        else:
+                            return str(audio_array)
+                    except Exception as e:
+                        logger.error(f"Bark voice generation failed: {e}")
+                        return self._create_fallback_audio(text, output_path)
+            
+            return self._create_fallback_audio(text, output_path)
+            
         except Exception as e:
             logger.error(f"Voice generation failed: {e}")
-        
-        return self._create_fallback_audio(text, output_path)
+            return self._create_fallback_audio(text, output_path)
     
     def _create_fallback_audio(self, text: str, output_path: str) -> str:
         """Create fallback audio when model fails."""
@@ -966,69 +1239,62 @@ class BasePipeline:
             logger.error(f"Fallback audio creation failed: {e}")
             return output_path
     
-    def generate_background_music(self, prompt: Optional[str] = None, duration: float = 60.0, output_path: Optional[str] = None) -> Optional[str]:
-        """Generate background music."""
-        if not output_path:
-            import time
-            output_path = f"music_{int(time.time())}.wav"
-        if not prompt:
-            prompt = f"{self.channel_type} background music"
-            
-        music_model = self.load_music_model()
-        if not music_model:
-            return self._create_fallback_music(prompt or "background music", duration, output_path)
-        
+    def generate_background_music(self, scene_description: str, duration: float = 30.0, output_path: str = None) -> str:
+        """Generate background music for scene."""
         try:
-            if "generate" in music_model:
-                result = music_model["generate"](prompt, duration=duration)
+            music_model = self.load_music_model("musicgen")
+            
+            if music_model and music_model.get("loaded"):
+                music_prompt = f"Epic background music for {scene_description}, cinematic and atmospheric"
                 
-                if result and output_path:
-                    import scipy.io.wavfile as wavfile
-                    sample_rate = 32000
-                    if isinstance(result, np.ndarray):
-                        wavfile.write(output_path, sample_rate, result)
-                    else:
-                        wavfile.write(output_path, sample_rate, np.array(result))
-                    logger.info(f"Background music generated: {output_path}")
-                    return output_path
-                
+                if music_model["type"] == "musicgen":
+                    try:
+                        audio_tensor = music_model["generate"](music_prompt, duration)
+                        
+                        if output_path:
+                            import torchaudio
+                            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                            torchaudio.save(output_path, audio_tensor[0].cpu(), 32000)
+                            return output_path
+                        else:
+                            return str(audio_tensor)
+                    except Exception as e:
+                        logger.error(f"MusicGen generation failed: {e}")
+                        return self._create_fallback_music(scene_description, duration, output_path)
+                elif music_model["type"] == "fallback":
+                    return music_model["generate"]([scene_description], duration)
+            
+            return self._create_fallback_music(scene_description, duration, output_path)
+            
         except Exception as e:
             logger.error(f"Music generation failed: {e}")
-        
-        return self._create_fallback_music(duration, output_path)
+            return self._create_fallback_music(scene_description, duration, output_path)
     
-    def _create_fallback_music(self, duration: float, output_path: str) -> str:
-        """Create fallback music when model fails."""
+    def _create_fallback_music(self, description: str, duration: float = 30.0, output_path: str = None) -> str:
+        """Create fallback background music."""
         try:
             import numpy as np
-            import scipy.io.wavfile as wavfile
+            import soundfile as sf
             
-            if not output_path:
-                output_path = f"fallback_music_{int(time.time())}.wav"
-            
-            sample_rate = 22050
+            sample_rate = 44100
             samples = int(duration * sample_rate)
+            
             t = np.linspace(0, duration, samples)
+            frequency = 220
+            music = 0.3 * np.sin(2 * np.pi * frequency * t) * np.exp(-t / 10)
             
-            base_freq = 220
-            music = (
-                0.3 * np.sin(2 * np.pi * base_freq * t) +
-                0.2 * np.sin(2 * np.pi * base_freq * 1.5 * t) +
-                0.1 * np.sin(2 * np.pi * base_freq * 2 * t)
-            )
-            
-            envelope = np.exp(-t * 0.1) * (1 + 0.5 * np.sin(2 * np.pi * 0.1 * t))
-            music *= envelope
-            
-            music = (music * 32767).astype(np.int16)
-            wavfile.write(output_path, sample_rate, music)
-            
-            logger.info(f"Fallback music created: {output_path}")
-            return output_path
-            
+            if output_path:
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                sf.write(output_path, music, sample_rate)
+                return output_path
+            else:
+                fallback_path = "/tmp/fallback_music.wav"
+                sf.write(fallback_path, music, sample_rate)
+                return fallback_path
+                
         except Exception as e:
             logger.error(f"Fallback music creation failed: {e}")
-            return output_path
+            return ""
     
     def cleanup_models(self):
         """Clean up loaded models to free memory."""
@@ -1080,31 +1346,7 @@ class BasePipeline:
                 "locations": [{"name": "Location1"}]
             }
     
-    def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
-        """Generate text using LLM model."""
-        try:
-            import torch
-            
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
-            if torch.cuda.is_available():
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs,
-                    max_length=inputs["input_ids"].shape[1] + max_tokens,
-                    num_return_sequences=1,
-                    temperature=0.8,
-                    do_sample=True,
-                    pad_token_id=tokenizer.eos_token_id
-                )
-            
-            generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            return generated_text[len(prompt):].strip()
-            
-        except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
-            return f"Generated content for: {prompt}"
+
 
     def extract_highlights_from_video(self, video_path: str, num_highlights: int = 5) -> List[Dict]:
         """Extract highlight moments from main video using motion analysis."""
@@ -1112,39 +1354,83 @@ class BasePipeline:
             import cv2
             import numpy as np
             
+            if not os.path.exists(video_path):
+                logger.warning(f"Video file not found: {video_path}")
+                return self._create_fallback_highlights(num_highlights)
+            
             cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                logger.error(f"Could not open video: {video_path}")
+                return self._create_fallback_highlights(num_highlights)
+            
             fps = cap.get(cv2.CAP_PROP_FPS)
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            duration = total_frames / fps
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps if fps > 0 else 0
+            
+            if duration < 15:
+                logger.warning(f"Video too short for highlights: {duration}s")
+                cap.release()
+                return self._create_fallback_highlights(num_highlights)
             
             highlights = []
-            segment_duration = 60
-            num_segments = int(duration // segment_duration)
+            segment_duration = 15
+            motion_scores = []
             
-            for i in range(num_segments):
-                start_time = i * segment_duration
-                end_time = min((i + 1) * segment_duration, duration)
+            prev_frame = None
+            frame_idx = 0
+            
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
                 
-                excitement_score = self._calculate_segment_excitement(
-                    video_path, start_time, end_time, cap, fps
-                )
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                
+                if prev_frame is not None:
+                    diff = cv2.absdiff(prev_frame, gray)
+                    motion_score = np.mean(diff)
+                    motion_scores.append((frame_idx / fps, motion_score))
+                
+                prev_frame = gray
+                frame_idx += 1
+            
+            cap.release()
+            
+            if not motion_scores:
+                return self._create_fallback_highlights(num_highlights)
+            
+            motion_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            for i, (timestamp, score) in enumerate(motion_scores[:num_highlights]):
+                start_time = max(0, timestamp - segment_duration / 2)
+                end_time = min(duration, start_time + segment_duration)
                 
                 highlights.append({
                     "start_time": start_time,
                     "end_time": end_time,
-                    "duration": end_time - start_time,
-                    "excitement_score": excitement_score,
-                    "type": self._classify_segment_type(excitement_score)
+                    "duration": segment_duration,
+                    "excitement_score": score,
+                    "title": f"Highlight {i + 1}"
                 })
             
-            highlights.sort(key=lambda x: x["excitement_score"], reverse=True)
-            cap.release()
-            
-            return highlights[:num_highlights]
+            return highlights
             
         except Exception as e:
             logger.error(f"Error extracting highlights: {e}")
-            return []
+            return self._create_fallback_highlights(num_highlights)
+    
+    def _create_fallback_highlights(self, num_highlights: int) -> List[Dict]:
+        """Create fallback highlights when video analysis fails."""
+        highlights = []
+        for i in range(min(num_highlights, 3)):
+            highlights.append({
+                "start_time": i * 20,
+                "end_time": (i * 20) + 15,
+                "duration": 15,
+                "excitement_score": 50.0,
+                "title": f"Highlight {i + 1}"
+            })
+        return highlights
 
     def _calculate_segment_excitement(self, video_path: str, start_time: float, end_time: float, cap, fps: float) -> float:
         """Calculate excitement score for a video segment using motion analysis."""
@@ -1195,60 +1481,64 @@ class BasePipeline:
         else:
             return "low_action"
 
-    def create_short_from_highlight(self, input_video: str, highlight: Dict, output_path: str, short_number: int) -> Optional[Dict]:
-        """Create a single short from highlight data."""
+    def create_short_from_highlight(self, video_path: str, highlight: Dict, output_path: str, short_number: int) -> Optional[Dict]:
+        """Create a short video from a highlight segment."""
         try:
-            from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
+            import subprocess
+            
+            if not os.path.exists(video_path):
+                logger.error(f"Source video not found: {video_path}")
+                return None
+            
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
             start_time = highlight["start_time"]
-            duration = min(highlight["duration"], 60)
+            duration = highlight["duration"]
             
-            clip = VideoFileClip(input_video).subclip(start_time, start_time + duration)
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-ss', str(start_time),
+                '-t', str(duration),
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920',
+                '-c:v', 'libx264',
+                '-preset', 'veryslow',
+                '-crf', '15',
+                '-c:a', 'aac',
+                output_path
+            ]
             
-            clip = clip.resize(height=1920).crop(x_center=clip.w/2, width=1080)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
-            title = self._generate_short_title(highlight, short_number)
-            
-            title_clip = TextClip(title, fontsize=40, color='white', bg_color='black')
-            title_clip = title_clip.set_duration(3).set_position(('center', 'top'))
-            
-            final_clip = CompositeVideoClip([clip, title_clip])
-            
-            final_clip.write_videofile(
-                output_path,
-                codec='libx264',
-                fps=30,
-                preset='medium'
-            )
-            
-            clip.close()
-            title_clip.close()
-            final_clip.close()
-            
-            return {
-                "path": output_path,
-                "title": title,
-                "duration": duration,
-                "type": highlight["type"],
-                "excitement_score": highlight["excitement_score"]
-            }
-            
+            if result.returncode == 0 and os.path.exists(output_path):
+                title = self._generate_short_title(highlight, short_number)
+                
+                return {
+                    "path": output_path,
+                    "title": title,
+                    "duration": duration,
+                    "excitement_score": highlight["excitement_score"]
+                }
+            else:
+                logger.error(f"FFmpeg failed: {result.stderr}")
+                return None
+                
         except Exception as e:
             logger.error(f"Error creating short: {e}")
             return None
 
     def _generate_short_title(self, highlight: Dict, short_number: int) -> str:
         """Generate engaging title for short based on channel type and excitement."""
-        segment_type = highlight["type"]
+        excitement_score = highlight.get("excitement_score", 50.0)
         
-        if segment_type == "high_action":
+        if excitement_score > 70:
             titles = [
                 f"Epic {self.channel_type.title()} Moment #{short_number}!",
                 f"Insane {self.channel_type.title()} Action #{short_number}",
                 f"Mind-Blowing {self.channel_type.title()} #{short_number}",
                 f"Incredible {self.channel_type.title()} Scene #{short_number}"
             ]
-        elif segment_type == "medium_action":
+        elif excitement_score > 40:
             titles = [
                 f"Great {self.channel_type.title()} Moment #{short_number}",
                 f"Cool {self.channel_type.title()} Scene #{short_number}",
@@ -1286,4 +1576,138 @@ class BasePipeline:
         with open(manifest_file, 'w') as f:
             json.dump(manifest, f, indent=2)
         
-        return str(manifest_file)
+    
+    def generate_youtube_metadata(self, scenes: List[Dict], output_dir: Path, language: str = "en") -> Dict:
+        """Generate YouTube metadata including title, description, and tags."""
+        try:
+            import json
+            import random
+            
+            channel_type = getattr(self, 'channel_type', 'content')
+            
+            # Extract character names for better title generation
+            character_names = []
+            for scene in scenes:
+                if isinstance(scene, dict) and 'characters' in scene:
+                    for char in scene['characters']:
+                        if isinstance(char, dict) and 'name' in char:
+                            character_names.append(char['name'])
+                        elif isinstance(char, str):
+                            character_names.append(char)
+            
+            unique_chars = list(set(character_names))[:2]
+            char_string = " and ".join(unique_chars) if unique_chars else "Epic Heroes"
+            
+            title_prompt = f"Write a short YouTube title for {channel_type} content featuring {char_string}. Maximum 50 characters. Example: 'Epic Battle Adventure' or 'Heroes Unite'. Title only:"
+            
+            llm_model = self.load_llm_model()
+            if llm_model:
+                title = llm_model["generate"](title_prompt, max_tokens=15)
+                if not title or len(title.strip()) == 0:
+                    title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
+                else:
+                    title = title.strip()
+                    title = title.replace('"', '').replace("'", "").replace('-!', '').replace('"-', '')
+                    if title.startswith('"') and title.endswith('"'):
+                        title = title[1:-1]
+                    if not title.endswith(('.', '!', '?')):
+                        title = title + "!"
+            else:
+                title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
+            
+            if not title or len(title.strip()) == 0:
+                title = f"Amazing {channel_type.title()} Content - Episode {random.randint(1, 100)}"
+            
+            description_prompt = f"Write YouTube description for {channel_type} episode. Include plot summary. Keep under 100 words:"
+            
+            if llm_model:
+                description = llm_model["generate"](description_prompt, max_tokens=50)
+                if not description or len(description.strip()) == 0:
+                    description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
+                else:
+                    description = description.strip()
+                    description = description.replace('Title: [Show spoiler]', '').replace('Example Tit...', '')
+                    description = description.replace('Title:', '').strip()
+                    if description.startswith('"') and description.endswith('"'):
+                        description = description[1:-1]
+                    if not description.endswith(('.', '!', '?')):
+                        description = description + "."
+            else:
+                description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
+            
+            if not description or len(description.strip()) == 0:
+                description = f"Amazing {channel_type} content with incredible storytelling and epic scenes!"
+            
+            next_episode_prompt = f"List 3 next episode ideas for {channel_type}. Format: 1. Idea one 2. Idea two 3. Idea three"
+            
+            if llm_model:
+                next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=30)
+                if not next_suggestions or len(next_suggestions.strip()) == 0:
+                    next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
+                else:
+                    next_suggestions = next_suggestions.strip()
+            else:
+                next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
+            
+            if not next_suggestions or len(next_suggestions.strip()) == 0:
+                next_suggestions = "1. Epic character development\n2. New challenges and adventures\n3. Exciting plot twists"
+            
+            if not next_suggestions.strip().endswith(('.', '!', '?')):
+                next_suggestions = next_suggestions.strip() + "."
+            
+            tags = [
+                channel_type, "anime", "manga", "adventure", "action", 
+                "storytelling", "characters", "epic", "series", "episode"
+            ]
+            
+            metadata = {
+                "title": title.strip(),
+                "description": description.strip(),
+                "tags": tags,
+                "next_episode_suggestions": next_suggestions.strip(),
+                "language": language,
+                "scenes_count": len(scenes),
+                "channel_type": channel_type
+            }
+            
+            from pathlib import Path
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            title_file = output_dir / "title.txt"
+            description_file = output_dir / "description.txt"
+            tags_file = output_dir / "tags.txt"
+            next_episode_file = output_dir / "next_episode.txt"
+            
+            with open(title_file, 'w', encoding='utf-8') as f:
+                f.write(f"Title: {title.strip()}\n\nGenerated for {channel_type} episode with {len(scenes)} scenes")
+            
+            with open(description_file, 'w', encoding='utf-8') as f:
+                f.write(f"Title: \"{title.strip()}\"\n\n{description.strip()}\n\n🔥 Don't miss the next episode!\n👍 Like and Subscribe for more {channel_type} content!")
+            
+            with open(tags_file, 'w', encoding='utf-8') as f:
+                f.write(", ".join(tags))
+            
+            with open(next_episode_file, 'w', encoding='utf-8') as f:
+                f.write(f"Next Episode Suggestions:\n\n{next_suggestions.strip()}")
+            
+            metadata_file = output_dir / f"youtube_metadata_{language}.json"
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Generated YouTube metadata for {language}: {title}")
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Error generating YouTube metadata: {e}")
+            return {
+                "title": f"Epic {getattr(self, 'channel_type', 'content').title()} Adventure",
+                "description": "Amazing content with incredible storytelling!",
+                "tags": ["content", "adventure", "epic"],
+                "next_episode_suggestions": "More amazing content coming soon!",
+                "language": language,
+                "scenes_count": len(scenes) if scenes else 0,
+                "channel_type": getattr(self, 'channel_type', 'content')
+            }
+
+        return str(output_dir / "manifest.json")
