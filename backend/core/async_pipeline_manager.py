@@ -60,7 +60,8 @@ class AsyncPipelineManager:
             except Exception as e:
                 return False
     
-    return InlineVideoGenerator
+    def get_video_generator(self):
+        return self.InlineVideoGenerator()
 
 def _get_pipeline_utils():
     """Inline pipeline utilities to replace pipeline_utils."""
@@ -223,7 +224,8 @@ class AsyncPipelineManager:
         
         def generate_video():
             try:
-                video_generator_class = _get_video_generator()
+                async_manager = AsyncPipelineManager()
+                video_generator_class = async_manager.get_video_generator()
                 start_time = time.time()
                 model_manager = _get_model_manager_fallback()
                 vram_tier = model_manager._detect_vram_tier()
@@ -472,7 +474,8 @@ class AsyncPipelineManager:
             
             if task_type == "video_generation":
                 try:
-                    video_generator_class = _get_video_generator()
+                    async_manager = AsyncPipelineManager()
+                    video_generator_class = async_manager.get_video_generator()
                     generator = video_generator_class(
                         vram_tier="low",
                         target_resolution=(1920, 1080)
