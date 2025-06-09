@@ -17,6 +17,7 @@ import random
 import re
 import traceback
 import hashlib
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 
@@ -38,8 +39,8 @@ except ImportError as e:
 class AnimeChannelPipeline(BasePipeline):
     """Self-contained anime content generation pipeline with all functionality inlined."""
     
-    def __init__(self, output_path: Optional[str] = None):
-        super().__init__("anime", output_path)
+    def __init__(self, output_path: Optional[str] = None, base_model: str = "stable_diffusion_1_5"):
+        super().__init__("anime", output_path, base_model)
         self.combat_calls_count = 0
         self.max_combat_calls = 3
         self.scene_duration_estimates = {
@@ -67,7 +68,8 @@ class AnimeChannelPipeline(BasePipeline):
     def run(self, input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
             lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
             db_run=None, db=None, render_fps: int = 24, output_fps: int = 60, 
-            frame_interpolation_enabled: bool = True, language: str = "en") -> str:
+            frame_interpolation_enabled: bool = True, llm_model: str = "microsoft/DialoGPT-medium", 
+            language: str = "en") -> str:
         """
         Run the self-contained anime pipeline.
         
@@ -96,17 +98,24 @@ class AnimeChannelPipeline(BasePipeline):
         try:
             return self._execute_pipeline(
                 input_path, output_path, base_model, lora_models, 
-                db_run, db, render_fps, output_fps, frame_interpolation_enabled, language
+                db_run, db, render_fps, output_fps, frame_interpolation_enabled, llm_model, language
             )
         except Exception as e:
-            logger.error(f"Anime pipeline failed: {e}")
+            error_message = f"Anime pipeline failed: {e}\n{traceback.format_exc()}"
+            logger.error(error_message)
+            
+            output_dir = Path(output_path)
+            error_log_path = output_dir / "error_log.txt"
+            with open(error_log_path, "a") as f:
+                f.write(f"[{datetime.now()}] {error_message}\n\n")
+            
             raise
         finally:
             self.cleanup_models()
     
     def _execute_pipeline(self, input_path: str, output_path: str, base_model: str, 
                          lora_models: Optional[List[str]], db_run, db, render_fps: int, 
-                         output_fps: int, frame_interpolation_enabled: bool, language: str) -> str:
+                         output_fps: int, frame_interpolation_enabled: bool, llm_model: str, language: str) -> str:
         
         output_dir = Path(output_path)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -954,7 +963,7 @@ class AnimeChannelPipeline(BasePipeline):
             }
             
             try:
-                video_generator = self._load_video_model("animatediff_v2")
+                video_generator = self._load_video_model(self.base_model)
                 if video_generator:
                     success = video_generator.generate_video(
                         prompt=video_params["prompt"],
@@ -1545,7 +1554,18 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         scene_file = scenes_dir / f"scene_{i+1:03d}.png"
         try:
             if anime_model:
-                result = None
+                try:
+                    result = anime_model["generate"](
+                        prompt=f"anime character, {scene_text}, high quality, detailed anime art style",
+                        num_inference_steps=30,
+                        guidance_scale=7.5,
+                        width=512,
+                        height=512
+                    )
+                except Exception as e:
+                    print(f"Error generating scene {i+1} with model: {e}")
+                    result = None
+                
                 if result and hasattr(result, "images") and result.images:
                     result.images[0].save(scene_file)
                     print(f"Successfully generated scene {i+1} image")

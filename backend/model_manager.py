@@ -490,6 +490,78 @@ BASE_MODELS = {
         "vram_required": "medium",
         "repo": "deforum/deforum-stable-diffusion",
         "version": "v0.7"
+    },
+    "dreamshaper": {
+        "name": "DreamShaper",
+        "description": "Dreamy, painting-like anime characters and backgrounds",
+        "size": "5.5GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "Lykon/DreamShaper",
+        "version": "v8.0"
+    },
+    "kenshi": {
+        "name": "Kenshi",
+        "description": "Semi-realistic anime aesthetic",
+        "size": "5.2GB", 
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "Kenshi/anything-v4.5",
+        "version": "v1.0"
+    },
+    "arcane_diffusion": {
+        "name": "Arcane Diffusion",
+        "description": "League of Legends series art style",
+        "size": "4.8GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "nitrosocke/Arcane-Diffusion",
+        "version": "v3.0"
+    },
+    "aam_xl_animemix": {
+        "name": "AAM XL AnimeMix",
+        "description": "High-quality anime mixing model",
+        "size": "6.2GB",
+        "downloaded": False,
+        "vram_required": "high",
+        "repo": "Linaqruf/animagine-xl-3.1",
+        "version": "v3.1"
+    },
+    "abyssorangemix3": {
+        "name": "AbyssOrangeMix3",
+        "description": "Popular anime model with vibrant colors",
+        "size": "5.7GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "WarriorMama777/OrangeMixs",
+        "version": "v3.0"
+    },
+    "meina_mix": {
+        "name": "Meina Series",
+        "description": "Modern anime aesthetic",
+        "size": "5.4GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "Meina/MeinaMix",
+        "version": "v11"
+    },
+    "mistoon": {
+        "name": "Mistoon",
+        "description": "Classic anime look",
+        "size": "5.1GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "Ojimi/MisToon",
+        "version": "v2.0"
+    },
+    "animagine_v3": {
+        "name": "AnimagineV3",
+        "description": "Popular choice for anime-style generation",
+        "size": "6.0GB",
+        "downloaded": False,
+        "vram_required": "medium",
+        "repo": "Linaqruf/animagine-xl-3.0",
+        "version": "v3.0"
     }
 }
 

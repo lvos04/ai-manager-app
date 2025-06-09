@@ -38,8 +38,8 @@ except ImportError as e:
 class SuperheroChannelPipeline(BasePipeline):
     """Self-contained superhero content generation pipeline with all functionality inlined."""
     
-    def __init__(self, output_path: Optional[str] = None):
-        super().__init__("superhero", output_path)
+    def __init__(self, output_path: Optional[str] = None, base_model: str = "stable_diffusion_1_5"):
+        super().__init__("superhero", output_path, base_model)
         self.combat_calls_count = 0
         self.max_combat_calls = 1
         self.scene_duration_estimates = {
@@ -672,7 +672,7 @@ class SuperheroChannelPipeline(BasePipeline):
             }
             
             try:
-                video_generator = self._load_video_model("animatediff_v2")
+                video_generator = self._load_video_model(self.base_model)
                 if video_generator:
                     success = video_generator.generate_video(
                         **video_params,
