@@ -815,11 +815,19 @@ class NewProjectDialog(QDialog):
                             
                             if not channel_compatibility or channel_type in channel_compatibility:
                                 model_name = model["name"]
+                                model_description = model.get("description", "")
                                 compatible_models.append(model_name)
-                                if model_name == optimal_model:
-                                    self.base_model_combo.addItem(f"{model_name} (Recommended for your GPU)")
+                                
+                                if model_description and "Best for:" in model_description:
+                                    best_for_part = model_description.split("Best for:")[1].split(".")[0].strip()
+                                    display_text = f"{model_name} - {best_for_part}"
                                 else:
-                                    self.base_model_combo.addItem(model_name)
+                                    display_text = model_name
+                                
+                                if model_name == optimal_model:
+                                    self.base_model_combo.addItem(f"{display_text} (Recommended for your GPU)")
+                                else:
+                                    self.base_model_combo.addItem(display_text)
                 
                 print(f"🔍 DEBUG: Found {len(all_base_models)} base models total:")
                 for model in all_base_models:
