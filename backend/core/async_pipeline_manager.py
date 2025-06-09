@@ -12,54 +12,70 @@ from .logging_config import get_logger
 
 logger = get_logger("async_pipeline_manager")
 
-class AsyncPipelineManager:
-    """Inline video generator to replace TextToVideoGenerator."""
+
+def _get_video_generator():
+    """Return an inline video generator used for placeholder video creation."""
+
     class InlineVideoGenerator:
-        def __init__(self, vram_tier="medium", target_resolution=(1920, 1080)):
+        def __init__(self, vram_tier: str = "medium", target_resolution=(1920, 1080)):
             self.vram_tier = vram_tier
             self.target_resolution = target_resolution
             self.device = "cuda" if vram_tier != "cpu" else "cpu"
-        
+
         def generate_video(self, prompt: str, model_name: str, output_path: str, duration: float = 5.0) -> bool:
-            """Generate video using efficient approach."""
+            """Generate a simple placeholder video using OpenCV."""
             try:
                 import cv2
                 import numpy as np
                 import os
-                
+
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                
+
                 duration = min(duration, 5.0)
                 fps = 24
                 frames = int(duration * fps)
                 width, height = self.target_resolution
-                
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
                 out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-                
+
                 if not out.isOpened():
                     return False
-                
+
                 for i in range(min(frames, 120)):
                     frame = np.zeros((height, width, 3), dtype=np.uint8)
                     frame[:] = (50, 50, 100)
-                    
+
                     try:
-                        cv2.putText(frame, "Generated Video", 
-                                   (50, height//2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-                        cv2.putText(frame, f"Frame {i+1}", 
-                                   (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
-                    except:
+                        cv2.putText(
+                            frame,
+                            "Generated Video",
+                            (50, height // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            2,
+                            (255, 255, 255),
+                            3,
+                        )
+                        cv2.putText(
+                            frame,
+                            f"Frame {i+1}",
+                            (50, height // 2 + 100),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1,
+                            (200, 200, 200),
+                            2,
+                        )
+                    except Exception:
                         pass
-                    
+
                     out.write(frame)
-                
+
                 out.release()
                 return True
-                
-            except Exception as e:
+
+            except Exception:
                 return False
-    
+
     return InlineVideoGenerator
 
 def _get_pipeline_utils():
