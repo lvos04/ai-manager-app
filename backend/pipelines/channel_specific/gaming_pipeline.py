@@ -38,8 +38,8 @@ except ImportError as e:
 class GamingChannelPipeline(BasePipeline):
     """Self-contained gaming content generation pipeline with all functionality inlined."""
     
-    def __init__(self, output_path: Optional[str] = None):
-        super().__init__("gaming", output_path)
+    def __init__(self, output_path: Optional[str] = None, base_model: str = "stable_diffusion_1_5"):
+        super().__init__("gaming", output_path, base_model)
         self.supports_combat = False
         self.video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv']
         self.audio_extensions = ['.mp3', '.wav', '.aac', '.ogg', '.flac']
@@ -1101,7 +1101,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 try:
                     pass
                     video_generator = TextToVideoGenerator()
-                    animatediff_model = video_generator.load_model("animatediff_v2")
+                    animatediff_model = video_generator.load_model(base_model)
                     print("AnimateDiff model loaded successfully")
                     
                     if animatediff_model:

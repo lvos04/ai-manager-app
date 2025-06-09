@@ -183,6 +183,12 @@ def run_pipeline_sync(project_id: int, pipeline_run_id: int, db: Session):
         db_project.status = ProjectStatus.RUNNING
         db.commit()
         
+        # Handle batch processing
+        batch_processing = getattr(db_project, 'batch_processing', False)
+        
+        if batch_processing and db_project.input_path and os.path.isdir(db_project.input_path):
+            return _process_batch_scripts(db_project, db_run, db)
+        
         # Create output directory if it doesn't exist
         if db_project.output_path is None:
             output_dir = OUTPUT_DIR / db_project.title.replace(" ", "_").lower()
@@ -226,6 +232,7 @@ def run_pipeline_sync(project_id: int, pipeline_run_id: int, db: Session):
         render_fps = getattr(db_project, 'render_fps', 24)
         output_fps = getattr(db_project, 'output_fps', 24)
         frame_interpolation_enabled = getattr(db_project, 'frame_interpolation_enabled', True)
+        llm_model = getattr(db_project, 'llm_model', 'microsoft/DialoGPT-medium')
         
         output_file = pipeline_module.run(
             input_path=input_path,
@@ -238,6 +245,7 @@ def run_pipeline_sync(project_id: int, pipeline_run_id: int, db: Session):
             render_fps=render_fps,
             output_fps=output_fps,
             frame_interpolation_enabled=frame_interpolation_enabled,
+            llm_model=llm_model,
             language="en"
         )
         
@@ -379,7 +387,7 @@ async def extract_scenes_from_pipeline(pipeline_module, input_path: str, channel
     if script_data and isinstance(script_data, dict) and channel_type != "gaming":
         try:
             logger.info("Starting LLM preparation for script expansion...")
-            llm_model = _load_llm()
+            llm_model = _load_llm("microsoft/DialoGPT-medium")
             
             min_duration_minutes = 20.0 / 60.0  # 20 seconds = 0.33 minutes
             expanded_script = _expand_script_if_needed(script_data, min_duration=min_duration_minutes)
@@ -409,13 +417,13 @@ async def extract_scenes_from_pipeline(pipeline_module, input_path: str, channel
     logger.info(f"Prepared {len(scene_details)} scenes for pipeline execution")
     return scene_details
 
-def _load_llm():
+def _load_llm(llm_model: str = "microsoft/DialoGPT-medium"):
         """Load LLM model for script expansion."""
         try:
             import torch
             from transformers import AutoTokenizer, AutoModelForCausalLM
             
-            model_name = "microsoft/DialoGPT-medium"
+            model_name = llm_model
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model = AutoModelForCausalLM.from_pretrained(model_name)
             
@@ -438,7 +446,7 @@ def _expand_script_if_needed(script_data: Dict, min_duration: float = 20.0) -> D
         if current_duration >= min_duration * 60:
             return script_data
         
-        llm = _load_llm()
+        llm = _load_llm("microsoft/DialoGPT-medium")
         if not llm:
             return _expand_script_fallback(script_data, min_duration)
         
@@ -490,3 +498,108 @@ def _expand_script_fallback(script_data: Dict, min_duration: float) -> Dict:
     script_data['scenes'] = expanded_scenes
     logger.info(f"Fallback script expansion completed for {len(expanded_scenes)} scenes")
     return script_data
+
+def _process_batch_scripts(db_project, db_run, db):
+    """Process multiple scripts in batch mode."""
+    import glob
+    import traceback
+    
+    input_dir = Path(db_project.input_path)
+    base_output_dir = Path(db_project.output_path) if db_project.output_path else OUTPUT_DIR / db_project.title.replace(" ", "_").lower()
+    
+    script_patterns = ['*.txt', '*.yaml', '*.yml', '*.json']
+    script_files = []
+    
+    for pattern in script_patterns:
+        script_files.extend(glob.glob(str(input_dir / pattern)))
+    
+    if not script_files:
+        logger.warning(f"No script files found in batch directory: {input_dir}")
+        db_run.status = ProjectStatus.FAILED
+        db_run.error = "No script files found in batch directory"
+        db.commit()
+        return
+    
+    logger.info(f"Found {len(script_files)} scripts for batch processing")
+    
+    # Get parameters
+    base_model = db_project.base_model or "stable_diffusion_1_5"
+    channel_type = db_project.channel_type
+    render_fps = getattr(db_project, 'render_fps', 24)
+    output_fps = getattr(db_project, 'output_fps', 24)
+    frame_interpolation_enabled = getattr(db_project, 'frame_interpolation_enabled', True)
+    llm_model = getattr(db_project, 'llm_model', 'microsoft/DialoGPT-medium')
+    
+    project_loras = db.query(DBProjectLora).filter(
+        DBProjectLora.project_id == db_project.id
+    ).order_by(DBProjectLora.order_index).all()
+    
+    if not project_loras and db_project.lora_model:
+        lora_models = [db_project.lora_model]
+        lora_paths = {}
+    else:
+        lora_models = [pl.lora_name for pl in project_loras]
+        lora_paths = {pl.lora_name: pl.lora_path for pl in project_loras if pl.lora_path}
+    
+    from .pipelines.channel_specific import get_pipeline_for_channel
+    pipeline_module = get_pipeline_for_channel(channel_type)
+    
+    if pipeline_module is None:
+        raise ValueError(f"No pipeline available for channel type: {channel_type}")
+    
+    successful_episodes = 0
+    failed_episodes = 0
+    
+    for i, script_file in enumerate(script_files):
+        try:
+            script_name = Path(script_file).stem
+            episode_output_dir = base_output_dir / f"episode_{i+1:02d}_{script_name}"
+            episode_output_dir.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"Processing episode {i+1}/{len(script_files)}: {script_name}")
+            
+            progress = (i / len(script_files)) * 100
+            db_run.progress = progress
+            db.commit()
+            
+            output_file = pipeline_module.run(
+                input_path=script_file,
+                output_path=str(episode_output_dir),
+                base_model=base_model,
+                lora_models=lora_models,
+                lora_paths=lora_paths,
+                db_run=db_run,
+                db=db,
+                render_fps=render_fps,
+                output_fps=output_fps,
+                frame_interpolation_enabled=frame_interpolation_enabled,
+                llm_model=llm_model,
+                language="en"
+            )
+            
+            successful_episodes += 1
+            logger.info(f"Episode {i+1} completed: {output_file}")
+            
+        except Exception as e:
+            failed_episodes += 1
+            logger.error(f"Episode {i+1} failed: {e}")
+            
+            error_log_path = os.path.join(str(episode_output_dir), "error_log.txt")
+            with open(error_log_path, 'w') as f:
+                f.write(f"Episode {i+1} Error: {str(e)}\n")
+                f.write(f"Script file: {script_file}\n")
+                f.write(f"Traceback:\n{traceback.format_exc()}")
+    
+    db_run.progress = 100.0
+    if successful_episodes > 0:
+        db_run.status = ProjectStatus.COMPLETED
+        db_project.status = ProjectStatus.COMPLETED
+        db_run.output_path = str(base_output_dir)
+        logger.info(f"Batch processing completed: {successful_episodes} successful, {failed_episodes} failed")
+    else:
+        db_run.status = ProjectStatus.FAILED
+        db_project.status = ProjectStatus.FAILED
+        db_run.error = f"All {len(script_files)} episodes failed"
+    
+    db.commit()
+    return str(base_output_dir)

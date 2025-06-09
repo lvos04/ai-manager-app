@@ -21,8 +21,9 @@ logger = logging.getLogger(__name__)
 class BasePipeline:
     """Base class for self-contained channel pipelines."""
     
-    def __init__(self, channel_type: str, output_path: Optional[str] = None):
+    def __init__(self, channel_type: str, output_path: Optional[str] = None, base_model: str = "stable_diffusion_1_5"):
         self.channel_type = channel_type
+        self.base_model = base_model
         self.models = {}
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -477,8 +478,10 @@ class BasePipeline:
         else:
             return f"High-quality {channel_type} content featuring amazing characters and epic storylines."
     
-    def _load_video_model(self, model_name: str = "animatediff_v2_sdxl"):
+    def _load_video_model(self, model_name: Optional[str] = None):
         """Load video generation model."""
+        if model_name is None:
+            model_name = self.base_model
         if model_name in self.models:
             return self.models[model_name]
         
