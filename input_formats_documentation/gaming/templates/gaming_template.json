@@ -1,0 +1,37 @@
+{
+  "title": "Epic Gaming Session",
+  "game": "Game Title Here",
+  "duration": 1800,
+  "highlights": [
+    {
+      "timestamp": 120,
+      "duration": 30,
+      "description": "Epic boss fight",
+      "intensity": "high"
+    },
+    {
+      "timestamp": 600,
+      "duration": 45,
+      "description": "Skillful gameplay sequence",
+      "intensity": "medium"
+    }
+  ],
+  "scenes": [
+    {
+      "description": "Opening gameplay sequence",
+      "duration": 60,
+      "style": "cinematic"
+    },
+    {
+      "description": "Main gameplay highlights",
+      "duration": 300,
+      "style": "action_packed"
+    }
+  ],
+  "metadata": {
+    "player": "Your Gamer Tag",
+    "difficulty": "Normal/Hard/Expert",
+    "platform": "PC/Console",
+    "recording_quality": "1080p/1440p/4K"
+  }
+}

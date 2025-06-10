@@ -1,0 +1,44 @@
+MARVEL/DC SUPERHERO STORY
+
+Title: Your Superhero Story Title
+Universe: Marvel or DC
+Setting: Location (New York, Gotham, etc.)
+
+MAIN CHARACTER:
+Hero Name: [Superhero Name]
+Secret Identity: [Real Name]
+Powers: [List of abilities]
+Costume: [Description of outfit]
+
+SUPPORTING CHARACTERS:
+Ally: [Name and role]
+Mentor: [Name and relationship]
+Love Interest: [Name and connection]
+
+VILLAIN:
+Name: [Villain name]
+Powers: [Villain abilities]
+Motivation: [Why they're evil]
+Connection to Hero: [Relationship]
+
+STORY OUTLINE:
+
+Act 1: Setup
+- Hero's normal life
+- Inciting incident
+- Call to action
+
+Act 2: Conflict
+- Hero faces challenges
+- Villain's plan unfolds
+- Personal stakes raised
+
+Act 3: Resolution
+- Final confrontation
+- Hero's growth
+- Resolution of conflict
+
+THEMES:
+- Responsibility and power
+- Justice vs. vengeance
+- Personal sacrifice for greater good

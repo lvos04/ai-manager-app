@@ -670,8 +670,8 @@ class BasePipeline:
                                            (50, height//2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
                                 cv2.putText(frame, f"Frame {i+1}", 
                                            (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
-                            except:
-                                pass
+                            except Exception as e:
+                                logger.error(f"Error adding text overlay: {e}")
                             
                             out.write(frame)
                         
@@ -954,8 +954,8 @@ class BasePipeline:
             if 'llm' in self.models and self.models['llm']:
                 try:
                     torch.cuda.empty_cache()
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Error during model cleanup: {e}")
     
     def _expand_script_fallback(self, script_data: Dict, min_duration: float) -> Dict:
         """Fallback script expansion without LLM."""

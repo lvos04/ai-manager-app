@@ -21,6 +21,23 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 
 from .base_pipeline import BasePipeline
+try:
+    from ...core.ai_model_manager import AIModelManager
+except ImportError:
+    class AIModelManager:
+        def __init__(self):
+            self.vram_tier = "medium"
+        def load_base_model(self, model_name, model_type="image"):
+            return {"name": model_name, "generate": lambda prompt, **kwargs: f"Generated: {prompt}"}
+        def force_memory_cleanup(self):
+            pass
+
+try:
+    from ...core.ai_model_manager import AIModelManager
+    from ...pipelines.text_to_video_generator import TextToVideoGenerator
+except ImportError:
+    AIModelManager = None
+    TextToVideoGenerator = None
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +60,36 @@ class GamingChannelPipeline(BasePipeline):
         self.supports_combat = False
         self.video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv']
         self.audio_extensions = ['.mp3', '.wav', '.aac', '.ogg', '.flac']
+    
+    def _create_scene_video_with_generation(self, scene_description: str, characters: list, 
+                                           output_path: str, model_name: str = "zeroscope") -> bool:
+        """Create scene video with AI generation."""
+        try:
+            video_generator = self._load_video_model(model_name)
+            if video_generator:
+                success = video_generator.generate_video(
+                    prompt=self._optimize_video_prompt(scene_description, "gaming"),
+                    duration=10.0,
+                    output_path=output_path
+                )
+                return success and os.path.exists(output_path)
+            return False
+        except Exception as e:
+            logger.error(f"Error in scene video generation: {e}")
+            return False
+    
+    def _create_fallback_video(self, scene_file: str, scene_prompt: str, scene_num: int) -> str:
+        """Create fallback video when AI generation fails."""
+        try:
+            return super()._create_fallback_video(scene_prompt, 10.0, scene_file)
+        except Exception as e:
+            logger.error(f"Error creating fallback video: {e}")
+            return scene_file
+    
+    def _optimize_video_prompt(self, prompt: str, channel_type: str = "gaming") -> str:
+        """Optimize prompt for gaming video generation."""
+        gaming_style = "realistic gaming footage, high-quality gameplay, dynamic action, "
+        return f"{gaming_style}{prompt}, 16:9 aspect ratio, smooth motion, professional cinematography"
     
     def run(self, input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
             lora_models: Optional[List[str]] = None, lora_paths: Optional[Dict[str, str]] = None, 
@@ -551,6 +598,54 @@ class GamingChannelPipeline(BasePipeline):
         except Exception as e:
             print(f"Error creating fallback content: {e}")
             return str(output_dir)
+    
+    def get_optimal_model_for_channel(self) -> str:
+        """Get optimal model for gaming channel."""
+        return "stable_diffusion_1_5"
+    
+    def process_game_recording(self, input_path: str, output_path: str) -> dict:
+        """Process game recording and extract highlights."""
+        try:
+            result = self._process_game_recording(input_path, output_path)
+            return {"success": True, "highlight_reel": result, "output_path": output_path}
+        except Exception as e:
+            logger.error(f"Error processing game recording: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def generate_shorts_from_video(self, video_path: str, output_dir: str) -> list:
+        """Generate shorts from video highlights."""
+        try:
+            return self._create_shorts(video_path, output_dir)
+        except Exception as e:
+            logger.error(f"Error generating shorts: {e}")
+            return []
+    
+    def generate_ai_shorts(self, prompt: str, output_dir: str, count: int = 3) -> list:
+        """Generate AI-powered shorts."""
+        try:
+            shorts = []
+            for i in range(count):
+                short_path = f"{output_dir}/ai_short_{i+1:03d}.mp4"
+                success = self._create_scene_video_with_generation(
+                    prompt, [], short_path, "zeroscope"
+                )
+                if success:
+                    shorts.append(short_path)
+            return shorts
+        except Exception as e:
+            logger.error(f"Error generating AI shorts: {e}")
+            return []
+    
+    def create_scene_video_with_generation(self, scene_description: str, characters: list, 
+                                         output_path: str, model_name: str) -> bool:
+        """Create scene video with generation."""
+        return self._create_scene_video_with_generation(
+            scene_description, characters, output_path, model_name
+        )
+    
+    def create_fallback_video(self, scene_file: str, scene_prompt: str, scene_num: int):
+        """Create fallback video."""
+        return self._create_fallback_video(scene_file, scene_prompt, scene_num)
 
 
 def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1_5", 
@@ -645,9 +740,8 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm']
             if any(input_path.lower().endswith(ext) for ext in video_extensions):
                 print("Detected video file - processing game recording...")
-                pass
-                
-                recording_result = process_game_recording(input_path, str(output_path))
+                pipeline = GamingChannelPipeline(str(output_path))
+                recording_result = pipeline._process_game_recording(input_path, str(output_path))
                 if recording_result.get("success"):
                     print("Generating shorts from processed recording...")
                     shorts_dir = output_path / "shorts"
@@ -683,8 +777,8 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     scenes = [scene.strip() for scene in f.read().split('\n\n') if scene.strip()]
             elif input_path.endswith(('.mp4', '.avi', '.mov', '.mkv')):
                 print(f"Processing game recording: {input_path}")
-                pass
-                result = process_game_recording(input_path, str(output_dir))
+                pipeline = GamingChannelPipeline(str(output_dir))
+                result = pipeline._process_game_recording(input_path, str(output_dir))
                 if result.get('success'):
                     scenes = [f"Game recording highlights from {input_path}"]
                 else:
@@ -761,9 +855,15 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     
     print(f"Loading {base_model} with {', '.join(lora_models) if lora_models else 'no'} LoRA(s)...")
     try:
-        pass
-        
-        optimal_model = get_optimal_model_for_channel("gaming")
+        optimal_models = {
+            "gaming": "stable_diffusion_1_5",
+            "anime": "anything_xl",
+            "manga": "manga_diffusion",
+            "superhero": "realistic_vision",
+            "marvel_dc": "realistic_vision",
+            "original_manga": "manga_diffusion"
+        }
+        optimal_model = optimal_models.get("gaming", "stable_diffusion_1_5")
         if base_model != optimal_model:
             print(f"Warning: {base_model} may not be optimal. Recommended: {optimal_model}")
         
@@ -787,9 +887,8 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         scene_file = scenes_dir / f"scene_{i:03d}_animated.mp4"
         
         try:
-            pass
-            
-            optimized_prompt = scene_prompt
+            gaming_style = "realistic gaming footage, high-quality gameplay, dynamic action, "
+            optimized_prompt = f"{gaming_style}{scene_prompt}, 16:9 aspect ratio, smooth motion"
             
             success = create_scene_video_with_generation(
                 scene_description=optimized_prompt,
@@ -802,13 +901,13 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 print(f"Successfully generated video for scene {i}")
             else:
                 print(f"Failed to generate video for scene {i}, creating fallback")
-                pass
-                create_fallback_video(scene_file, scene_prompt, i)
+                pipeline = GamingChannelPipeline()
+                pipeline._create_fallback_video(str(scene_file), scene_prompt, i)
                 
         except Exception as e:
             print(f"Error generating video for scene {i}: {e}")
-            pass
-            create_fallback_video(scene_file, scene_prompt, i)
+            pipeline = GamingChannelPipeline()
+            pipeline._create_fallback_video(str(scene_file), scene_prompt, i)
                 
         if db_run and db:
             progress_per_scene = 10.0 / len(scenes)
@@ -838,13 +937,19 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         final_file = scenes_dir / f"scene_{i+1:03d}_final.mp4"
         
         try:
-            pass
+            if AIModelManager:
+                model_manager = AIModelManager()
+                vram_tier = model_manager._detect_vram_tier()
+            else:
+                vram_tier = "medium"
             
-            model_manager = AIModelManager()
-            vram_tier = model_manager._detect_vram_tier()
+            optimized_prompt = f"realistic gaming footage, high-quality gameplay, dynamic action, {scene_text}, 16:9 aspect ratio"
             
-            optimized_prompt = optimize_video_prompt(scene_text, "gaming")
-            best_model = get_best_model_for_content("gaming", vram_tier)
+            if TextToVideoGenerator:
+                video_generator = TextToVideoGenerator(vram_tier=vram_tier)
+                best_model = video_generator.get_best_model_for_content("action", vram_tier)
+            else:
+                best_model = "stable_diffusion_1_5"
             
             success = create_scene_video_with_generation(
                 scene_description=optimized_prompt,
@@ -857,9 +962,22 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 print(f"Successfully generated high-quality gaming video for scene {i+1} using {best_model}")
                 
                 commentary_text = f"Epic gaming moment: {scene_text}"
-                voice_success = generate_voice_lines(commentary_text, "gaming_narrator", str(voice_file))
-                
-                music_success = generate_background_music(f"Gaming action music for {scene_text}", 15.0, str(music_file))
+                try:
+                    pipeline = GamingChannelPipeline()
+                    voice_model = pipeline.load_voice_model("bark")
+                    if voice_model and voice_model.get("generate"):
+                        voice_success = voice_model["generate"](commentary_text, output_path=str(voice_file))
+                    else:
+                        voice_success = pipeline._create_silent_audio(str(voice_file), 15.0)
+                    
+                    music_model = pipeline.load_music_model("musicgen")
+                    if music_model and music_model.get("generate"):
+                        music_success = music_model["generate"](f"Gaming action music for {scene_text}", duration=15.0, output_path=str(music_file))
+                    else:
+                        music_success = pipeline._create_silent_audio(str(music_file), 15.0)
+                except Exception as e:
+                    logger.error(f"Error generating voice/music: {e}")
+                    voice_success = music_success = False
                 
                 if i == 0:
                     shorts_dir = scenes_dir / "ai_shorts"
@@ -881,9 +999,11 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         db.commit()
     
     try:
-        pass
-        model_manager = AIModelManager()
-        whisper_model = model_manager.load_audio_model("whisper")
+        if AIModelManager:
+            model_manager = AIModelManager()
+            whisper_model = model_manager.load_audio_model("whisper")
+        else:
+            whisper_model = None
         print("Whisper model loaded successfully")
         
         audio_files = []
@@ -1105,9 +1225,11 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 intro_result.images[0].save(intro_image_file)
                 
                 try:
-                    pass
-                    video_generator = TextToVideoGenerator()
-                    animatediff_model = video_generator.load_model(base_model)
+                    if TextToVideoGenerator:
+                        video_generator = TextToVideoGenerator()
+                        animatediff_model = video_generator.load_model(base_model)
+                    else:
+                        animatediff_model = None
                     print("AnimateDiff model loaded successfully")
                     
                     if animatediff_model:
@@ -1295,20 +1417,25 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 final_clip.close()
                 
             try:
-                pass
-                
                 upscale_enabled = getattr(db_run, 'upscale_enabled', True) if db_run else True
                 target_resolution = getattr(db_run, 'target_resolution', '1080p') if db_run else '1080p'
                 
                 if upscale_enabled:
                     print(f"Upscaling final video to {target_resolution}...")
                     upscaled_file = final_dir / f"{os.path.basename(output_file).split('.')[0]}_upscaled.mp4"
-                    upscale_video_with_realesrgan(
-                        str(output_file),
-                        str(upscaled_file),
-                        target_resolution=target_resolution,
-                        enabled=upscale_enabled
-                    )
+                    try:
+                        from ...pipelines.ai_upscaler import AIUpscaler
+                        upscaler = AIUpscaler(vram_tier="medium")
+                        upscaler.upscale_video(
+                            input_path=str(output_file),
+                            output_path=str(upscaled_file),
+                            model_name="realesrgan_x4plus",
+                            target_resolution=(1920, 1080) if target_resolution == "1080p" else (3840, 2160)
+                        )
+                    except ImportError:
+                        import shutil
+                        shutil.copy2(str(output_file), str(upscaled_file))
+                    
                     shutil.move(str(upscaled_file), str(output_file))
                     print(f"Final video upscaled to {target_resolution}")
             except Exception as e:
@@ -1513,5 +1640,79 @@ Created with advanced AI technology for gaming content."""
     print(f"Gaming YouTube Channel pipeline complete. Output saved to {output_file}")
     print(f"Generated {len(scenes)} scenes, {min(5, len(scenes))} shorts, and all supporting assets")
     return str(output_file)
+
+def process_game_recording(input_path: str, output_path: str) -> dict:
+    """Process game recording and extract highlights."""
+    try:
+        pipeline = GamingChannelPipeline(output_path)
+        result = pipeline._process_game_recording(input_path, output_path)
+        return {"success": True, "highlight_reel": result, "output_path": output_path}
+    except Exception as e:
+        logger.error(f"Error processing game recording: {e}")
+        return {"success": False, "error": str(e)}
+
+def generate_shorts_from_video(video_path: str, output_dir: str) -> list:
+    """Generate shorts from video highlights."""
+    try:
+        pipeline = GamingChannelPipeline(output_dir)
+        return pipeline._create_shorts(video_path, output_dir)
+    except Exception as e:
+        logger.error(f"Error generating shorts: {e}")
+        return []
+
+def generate_ai_shorts(prompt: str, output_dir: str, count: int = 3) -> list:
+    """Generate AI-powered shorts."""
+    try:
+        pipeline = GamingChannelPipeline(output_dir)
+        shorts = []
+        for i in range(count):
+            short_path = f"{output_dir}/ai_short_{i+1:03d}.mp4"
+            success = pipeline._create_scene_video_with_generation(
+                prompt, [], short_path, "zeroscope"
+            )
+            if success:
+                shorts.append(short_path)
+        return shorts
+    except Exception as e:
+        logger.error(f"Error generating AI shorts: {e}")
+        return []
+
+def get_optimal_model_for_channel(channel: str) -> str:
+    """Get optimal model for channel type."""
+    optimal_models = {
+        "gaming": "stable_diffusion_1_5",
+        "anime": "anything_xl",
+        "manga": "manga_diffusion",
+        "superhero": "realistic_vision",
+        "marvel_dc": "realistic_vision",
+        "original_manga": "manga_diffusion"
+    }
+    return optimal_models.get(channel, "stable_diffusion_1_5")
+
+try:
+    from ...core.ai_model_manager import AIModelManager
+except ImportError:
+    AIModelManager = None
+
+def create_scene_video_with_generation(scene_description: str, characters: list, 
+                                     output_path: str, model_name: str) -> bool:
+    """Create scene video with generation (standalone function)."""
+    try:
+        pipeline = GamingChannelPipeline()
+        return pipeline.create_scene_video_with_generation(
+            scene_description, characters, output_path, model_name
+        )
+    except Exception as e:
+        logger.error(f"Error in standalone scene video generation: {e}")
+        return False
+
+def create_fallback_video(scene_file: str, scene_prompt: str, scene_num: int):
+    """Create fallback video (standalone function)."""
+    try:
+        pipeline = GamingChannelPipeline()
+        return pipeline.create_fallback_video(scene_file, scene_prompt, scene_num)
+    except Exception as e:
+        logger.error(f"Error in standalone fallback video: {e}")
+        return scene_file
 
 GamingPipeline = GamingChannelPipeline

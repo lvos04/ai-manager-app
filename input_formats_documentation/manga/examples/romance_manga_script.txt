@@ -1,0 +1,41 @@
+PAGE 1
+
+PANEL 1 (Full page splash)
+DESCRIPTION: Beautiful high school courtyard with cherry blossoms falling
+CAPTION: "Sakura High School - Where love blooms like cherry blossoms"
+
+PAGE 2
+
+PANEL 1 (Large, top half)
+DESCRIPTION: Close-up of YUKI (16) looking nervous with books in her arms
+YUKI: "Today's the day I finally tell him how I feel..."
+EMOTION: Nervous but determined
+
+PANEL 2 (Medium, bottom left)
+DESCRIPTION: HIROSHI (17) talking with friends by the school fountain
+SFX: CHATTER CHATTER
+
+PANEL 3 (Medium, bottom right)
+DESCRIPTION: Yuki's blushing face as she watches him
+YUKI: "He's so kind to everyone... that's what I love about him."
+EMOTION: Lovestruck
+
+PAGE 3
+
+PANEL 1 (Medium, top)
+DESCRIPTION: Yuki approaching Hiroshi, cherry blossoms swirling around
+YUKI: "Um... Hiroshi-kun?"
+EMOTION: Shy
+
+PANEL 2 (Large, middle)
+DESCRIPTION: Hiroshi turning with a gentle smile
+HIROSHI: "Oh, Yuki-chan! What's up?"
+EMOTION: Friendly, warm
+
+PANEL 3 (Small, bottom left)
+DESCRIPTION: Yuki's hands trembling as she holds a letter
+SFX: TREMBLE TREMBLE
+
+PANEL 4 (Small, bottom right)
+DESCRIPTION: Close-up of the love letter
+TEXT ON LETTER: "To Hiroshi-kun..."

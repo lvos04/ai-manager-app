@@ -157,7 +157,28 @@ class ProgressiveLoader:
         
     def optimize_ui_responsiveness(self):
         """Ensure UI remains responsive during processing."""
-        pass
+        try:
+            import threading
+            import time
+            
+            current_thread = threading.current_thread()
+            if hasattr(current_thread, 'priority'):
+                current_thread.priority = threading.THREAD_PRIORITY_BELOW_NORMAL
+            
+            time.sleep(0.001)
+            
+            import gc
+            gc.collect()
+            
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except:
+                pass
+                
+        except Exception as e:
+            logger.error(f"Error optimizing UI responsiveness: {e}")
 
 class StreamingManager:
     """Manage content streaming."""

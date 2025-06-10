@@ -1,0 +1,55 @@
+title: "Arcane Academy Episode 1: New Student"
+episode_number: 1
+duration: 1440
+style: "modern anime"
+
+characters:
+  - name: "Akira Spellweaver"
+    description: "Talented but untrained magic user"
+    voice_type: "young_male"
+    appearance: "messy brown hair, determined green eyes, casual clothes"
+  - name: "Luna Starlight"
+    description: "Top student and class representative"
+    voice_type: "young_female"
+    appearance: "long silver hair, elegant posture, academy uniform"
+  - name: "Professor Mystic"
+    description: "Wise but eccentric magic instructor"
+    voice_type: "mature_male"
+    appearance: "long beard, colorful robes, twinkling eyes"
+
+scenes:
+  - number: 1
+    description: "Akira arrives at the magical academy gates"
+    duration: 180
+    characters: ["Akira Spellweaver"]
+    dialogue:
+      - speaker: "Akira Spellweaver"
+        text: "So this is where I'll learn to control my powers..."
+    setting: "Grand magical academy with floating towers and mystical creatures"
+    
+  - number: 2
+    description: "First magic class demonstration goes wrong"
+    duration: 300
+    characters: ["Akira Spellweaver", "Luna Starlight", "Professor Mystic"]
+    dialogue:
+      - speaker: "Professor Mystic"
+        text: "Now, simply focus your energy and cast a basic light spell."
+      - speaker: "Akira Spellweaver"
+        text: "Like this?"
+      - speaker: "Luna Starlight"
+        text: "Wait, that's too much power!"
+    action: "Akira's spell goes out of control, creating a massive light explosion"
+    setting: "Magical classroom with floating desks and enchanted blackboards"
+    
+  - number: 3
+    description: "Luna helps Akira after class"
+    duration: 240
+    characters: ["Akira Spellweaver", "Luna Starlight"]
+    dialogue:
+      - speaker: "Luna Starlight"
+        text: "Don't worry, everyone struggles with control at first."
+      - speaker: "Akira Spellweaver"
+        text: "But I nearly destroyed the classroom!"
+      - speaker: "Luna Starlight"
+        text: "That just means you have incredible potential."
+    setting: "Academy gardens with magical plants and floating study areas"
