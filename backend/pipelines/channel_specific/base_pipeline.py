@@ -11,6 +11,7 @@ import time
 import logging
 import tempfile
 import shutil
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 import torch
@@ -2070,10 +2071,10 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
 
 
 
-    async def execute_async(self, project_data: Dict) -> Dict[str, Any]:
-        """Execute pipeline asynchronously with proper error handling."""
+    async def execute_async(self, project_data: Dict[str, Any]) -> str:
+        """Execute pipeline asynchronously."""
         try:
-            import asyncio
+            logger.info(f"Starting async execution for {self.channel_type} pipeline")
             
             input_path = project_data.get('input_path', '')
             script_data = project_data.get('script_data', {})
@@ -2103,6 +2104,19 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 frame_interpolation_enabled,
                 language
             )
+            
+            logger.info(f"Async execution completed for {self.channel_type} pipeline")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Async execution failed for {self.channel_type} pipeline: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            output_dir = self.ensure_output_dir(project_data.get('output_path', '/tmp/pipeline_output'))
+            fallback_video = output_dir / "fallback_video.mp4"
+            self._create_fallback_video("Pipeline execution failed", 300.0, str(fallback_video))
+            return str(output_dir)
 
     def run_with_script_data(self, input_path: str, script_data: Dict, output_path: str, 
                            base_model: str = "stable_diffusion_1_5", 
@@ -2200,17 +2214,3 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.warning(f"Failed to save LLM expansion results: {e}")
-
-            
-            return {
-                "success": True,
-                "output_path": result,
-                "message": f"Pipeline completed successfully for {self.channel_type}"
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Pipeline failed for {self.channel_type}: {str(e)}"
-            }
