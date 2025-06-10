@@ -1,0 +1,30 @@
+[Unit]
+Description=AI Manager App
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/ai-manager-app
+Environment=PATH=/opt/ai-manager-app/venv/bin
+Environment=HEADLESS=true
+Environment=API_HOST=0.0.0.0
+Environment=API_PORT=8000
+ExecStart=/opt/ai-manager-app/venv/bin/python main.py --headless
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ai-manager
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ai-manager-app/output /opt/ai-manager-app/database /opt/ai-manager-app/logs
+
+[Install]
+WantedBy=multi-user.target

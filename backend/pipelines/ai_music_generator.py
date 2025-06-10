@@ -111,9 +111,13 @@ class AIMusicGenerator:
             return False
     
     def _load_musicgen(self, model_name: str) -> bool:
-        """Load MusicGen model."""
+        """Load MusicGen model with fallback for missing audiocraft package."""
         try:
-            from audiocraft.models import MusicGen
+            try:
+                from audiocraft.models import MusicGen
+            except ImportError:
+                logger.warning("Audiocraft package not available (Python 3.12 compatibility issue)")
+                return False
             
             settings = self.model_settings[model_name].get(self.vram_tier, self.model_settings[model_name]["medium"])
             
