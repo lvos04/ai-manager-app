@@ -305,9 +305,21 @@ class AnimeChannelPipeline(BasePipeline):
             for enhanced_scene in scenes:
                 if isinstance(enhanced_scene, dict) and 'music_prompt' in enhanced_scene:
                     music_prompts.append(enhanced_scene['music_prompt'])
-                    total_duration += enhanced_scene.get('duration', 10.0)
+                    duration_val = enhanced_scene.get('duration', 10.0)
+                    if isinstance(duration_val, str):
+                        try:
+                            duration_val = float(duration_val.replace('seconds', '').strip())
+                        except (ValueError, AttributeError):
+                            duration_val = 10.0
+                    total_duration += duration_val
                 else:
-                    total_duration += enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) else 10.0
+                    duration_val = enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) else 10.0
+                    if isinstance(duration_val, str):
+                        try:
+                            duration_val = float(duration_val.replace('seconds', '').strip())
+                        except (ValueError, AttributeError):
+                            duration_val = 10.0
+                    total_duration += duration_val
             
             if music_prompts:
                 combined_music_prompt = f"anime soundtrack combining: {', '.join(set(music_prompts))}"
@@ -771,6 +783,11 @@ class AnimeChannelPipeline(BasePipeline):
                 else:
                     scene_duration = base_duration
                 
+                if isinstance(scene_duration, str):
+                    try:
+                        scene_duration = float(scene_duration.replace('seconds', '').strip())
+                    except (ValueError, AttributeError):
+                        scene_duration = base_duration
                 total_duration += scene_duration
         
         return total_duration

@@ -544,6 +544,14 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 else:
                     scene_duration = base_duration
                 
+                if isinstance(scene_duration, str):
+                    try:
+                        scene_duration = float(scene_duration.replace('seconds', '').strip())
+                    except (ValueError, AttributeError):
+                        scene_duration = 2.0  # Default fallback
+                elif not isinstance(scene_duration, (int, float)):
+                    scene_duration = 2.0  # Default fallback
+                
                 total_duration += scene_duration
         
         return total_duration

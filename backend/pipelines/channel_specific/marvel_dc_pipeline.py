@@ -501,6 +501,14 @@ class MarvelDCChannelPipeline(BasePipeline):
                 else:
                     scene_duration = base_duration
                 
+                if isinstance(scene_duration, str):
+                    try:
+                        scene_duration = float(scene_duration.replace('seconds', '').strip())
+                    except (ValueError, AttributeError):
+                        scene_duration = base_duration
+                elif not isinstance(scene_duration, (int, float)):
+                    scene_duration = base_duration
+                
                 total_duration += scene_duration
         
         return total_duration
