@@ -95,10 +95,14 @@ class AIVoiceGenerator:
             return False
     
     def _load_bark(self) -> bool:
-        """Load Bark voice model."""
+        """Load Bark voice model with fallback handling."""
         try:
-            from bark import SAMPLE_RATE, generate_audio, preload_models
-            from bark.generation import set_seed
+            try:
+                from bark import SAMPLE_RATE, generate_audio, preload_models
+                from bark.generation import set_seed
+            except ImportError:
+                logger.warning("Bark package not available (Python 3.12 compatibility issue)")
+                return False
             
             settings = self.model_settings["bark"].get(self.vram_tier, self.model_settings["bark"]["medium"])
             
@@ -127,9 +131,13 @@ class AIVoiceGenerator:
             return False
     
     def _load_xtts(self) -> bool:
-        """Load XTTS voice model."""
+        """Load XTTS voice model with fallback for missing TTS package."""
         try:
-            from TTS.api import TTS
+            try:
+                from TTS.api import TTS
+            except ImportError:
+                logger.warning("TTS package not available (Python 3.12 compatibility issue)")
+                return False
             
             settings = self.model_settings["xtts"].get(self.vram_tier, self.model_settings["xtts"]["medium"])
             
