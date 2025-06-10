@@ -173,7 +173,7 @@ class AIUpscaler:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load upscaling model: {model_name}")
-                return self._create_fallback_upscale(input_path, output_path, target_resolution)
+                return self._handle_upscale_failure(input_path, output_path)
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -183,7 +183,7 @@ class AIUpscaler:
             
         except Exception as e:
             logger.error(f"Error upscaling video: {e}")
-            return self._create_fallback_upscale(input_path, output_path, target_resolution)
+            return self._handle_upscale_failure(input_path, output_path)
     
     def _upscale_video_frames(self, input_path: str, output_path: str, 
                              target_resolution: Tuple[int, int] = None) -> bool:
@@ -269,7 +269,7 @@ class AIUpscaler:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load upscaling model: {model_name}")
-                return self._create_fallback_image_upscale(input_path, output_path, target_resolution)
+                return self._handle_upscale_failure(input_path, output_path) if output_path else False
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -296,70 +296,27 @@ class AIUpscaler:
                 
         except Exception as e:
             logger.error(f"Error upscaling image: {e}")
-            return self._create_fallback_image_upscale(input_path, output_path, target_resolution)
+            return self._handle_upscale_failure(input_path, output_path) if output_path else False
     
-    def _create_fallback_upscale(self, input_path: str, output_path: str, 
-                                target_resolution: Tuple[int, int] = None) -> bool:
-        """Create fallback upscaled video using basic interpolation."""
+    def _handle_upscale_failure(self, input_path: str, output_path: str) -> bool:
+        """Handle upscaling failure by returning original video without FFmpeg fallback."""
         try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            import shutil
+            logger.warning("RealESRGAN upscaling failed, returning original video without FFmpeg fallback")
             
-            if target_resolution:
-                width, height = target_resolution
-                cmd = [
-                    'ffmpeg', '-i', input_path,
-                    '-vf', f'scale={width}:{height}:flags=lanczos',
-                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                    '-y', output_path
-                ]
-            else:
-                cmd = [
-                    'ffmpeg', '-i', input_path,
-                    '-vf', 'scale=iw*2:ih*2:flags=lanczos',
-                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                    '-y', output_path
-                ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0 and os.path.exists(output_path):
-                logger.warning(f"Created fallback upscaled video: {output_path}")
+            if input_path != output_path:
+                shutil.copy2(input_path, output_path)
+                logger.info(f"Copied original video to output: {output_path}")
                 return True
             else:
-                logger.error(f"FFmpeg upscaling failed: {result.stderr}")
-                return False
+                logger.info("Input and output paths are the same, no copy needed")
+                return True
                 
         except Exception as e:
-            logger.error(f"Error creating fallback upscale: {e}")
+            logger.error(f"Failed to copy original video: {e}")
             return False
     
-    def _create_fallback_image_upscale(self, input_path: str, output_path: str,
-                                      target_resolution: Tuple[int, int] = None) -> bool:
-        """Create fallback upscaled image using basic interpolation."""
-        try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            img = cv2.imread(input_path, cv2.IMREAD_COLOR)
-            if img is None:
-                return False
-            
-            if target_resolution:
-                upscaled_img = cv2.resize(img, target_resolution, interpolation=cv2.INTER_LANCZOS4)
-            else:
-                height, width = img.shape[:2]
-                upscaled_img = cv2.resize(img, (width * 2, height * 2), interpolation=cv2.INTER_LANCZOS4)
-            
-            success = cv2.imwrite(output_path, upscaled_img)
-            
-            if success:
-                logger.warning(f"Created fallback upscaled image: {output_path}")
-                return True
-            else:
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error creating fallback image upscale: {e}")
-            return False
+
     
     def force_cleanup_all_models(self):
         """Force cleanup of all loaded upscaling models."""

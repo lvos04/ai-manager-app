@@ -698,70 +698,40 @@ class BasePipeline:
         
         try:
             if model_type == "bark":
-                retry_count = 0
-                max_retries = 3
-                while retry_count < max_retries:
-                    try:
-                        import torch
-                        torch.serialization.add_safe_globals([
-                            'numpy.core.multiarray.scalar',
-                            'numpy.core.multiarray._reconstruct',
-                            'numpy.ndarray',
-                            'numpy.dtype',
-                            'numpy.core.numeric',
-                            'numpy.core.multiarray.dtype'
-                        ])
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                         
-                        original_load = torch.load
-                        def patched_load(*args, **kwargs):
-                            kwargs['weights_only'] = False
-                            return original_load(*args, **kwargs)
-                        torch.load = patched_load
+                    from bark import SAMPLE_RATE, generate_audio, preload_models
+                    
+                    if self.vram_tier in ["low", "medium"]:
+                        os.environ["CUDA_VISIBLE_DEVICES"] = ""
                         
-                        from bark import SAMPLE_RATE, generate_audio, preload_models
-                        logger.info(f"Loading Bark model with {self.vram_tier} VRAM optimizations (attempt {retry_count + 1})")
-                        preload_models()
-                        
-                        # Restore original torch.load
-                        torch.load = original_load
-                        
-                        def bark_generate_wrapper(text, voice_preset="v2/en_speaker_6"):
-                            """Wrapper to handle Bark generation with proper error handling."""
-                            try:
-                                audio_array = generate_audio(text, history_prompt=voice_preset)
-                                return audio_array, SAMPLE_RATE
-                            except Exception as e:
-                                logger.error(f"Bark generation failed: {e}")
-                                return None, SAMPLE_RATE
-                        
-                        self.models[model_key] = {
-                            "type": "bark", 
-                            "loaded": True, 
-                            "sample_rate": SAMPLE_RATE, 
-                            "generate": bark_generate_wrapper
-                        }
-                        logger.info(f"Successfully loaded Bark model on attempt {retry_count + 1}")
-                        break
-                        
-                    except ImportError as e:
-                        logger.error(f"Bark import failed on attempt {retry_count + 1}: {e}")
-                        retry_count += 1
-                        if retry_count >= max_retries:
-                            logger.error("Failed to load Bark after all retries, using fallback")
-                            return None
-                    except Exception as e:
-                        logger.error(f"Bark loading failed on attempt {retry_count + 1}: {e}")
+                    preload_models()
+                    
+                    def bark_generate_wrapper(text, voice_preset="v2/en_speaker_6"):
                         try:
-                            import torch
-                            if torch.cuda.is_available():
-                                torch.cuda.empty_cache()
-                                torch.cuda.synchronize()
-                        except:
-                            pass
-                        retry_count += 1
-                        if retry_count >= max_retries:
-                            logger.error("Failed to load Bark after all retries, using fallback")
-                            return None
+                            audio_array = generate_audio(text, history_prompt=voice_preset)
+                            return audio_array, SAMPLE_RATE
+                        except Exception as e:
+                            logger.error(f"Bark generation failed: {e}")
+                            return self._create_fallback_audio(text, 22050)
+                    
+                    self.models[model_key] = {
+                        "type": "bark",
+                        "loaded": True,
+                        "generate": bark_generate_wrapper
+                    }
+                    logger.info("Bark model loaded successfully")
+                    
+                except Exception as e:
+                    logger.warning(f"Bark loading failed: {e}. Using fallback audio generation.")
+                    self.models[model_key] = {
+                        "type": "fallback",
+                        "loaded": True, 
+                        "generate": lambda text, **kwargs: self._create_fallback_audio(text, 22050)
+                    }
             elif model_type == "xtts":
                 retry_count = 0
                 max_retries = 3
@@ -831,42 +801,30 @@ class BasePipeline:
                         logger.info(f"Successfully loaded MusicGen model on attempt {retry_count + 1}")
                         break
                     except ImportError as e:
-                        logger.error(f"audiocraft import failed on attempt {retry_count + 1}: {e}")
-                        retry_count += 1
-                        if retry_count >= max_retries:
-                            logger.error("Failed to load audiocraft after all retries, using fallback")
-                            def fallback_wrapper(**kwargs):
-                                return self._generate_fallback_music(
-                                    descriptions=kwargs.get('descriptions', []),
-                                    duration=kwargs.get('duration', 30.0),
-                                    prompt=kwargs.get('prompt', None)
-                                )
-                            def fallback_wrapper(**kwargs):
-                                return self._generate_fallback_music(
-                                    descriptions=kwargs.get('descriptions', []),
-                                    duration=kwargs.get('duration', 30.0),
-                                    prompt=kwargs.get('prompt', None)
-                                )
-                            self.models[model_key] = {
-                                "type": "fallback", 
-                                "loaded": True,
-                                "generate": fallback_wrapper
-                            }
+                        logger.warning(f"audiocraft not available: {e}. Using fallback music generation.")
+                        self.models[model_key] = {
+                            "type": "fallback", 
+                            "loaded": True,
+                            "generate": lambda **kwargs: self._generate_fallback_music(
+                                descriptions=kwargs.get('descriptions', []),
+                                duration=kwargs.get('duration', 30.0),
+                                prompt=kwargs.get('prompt', None)
+                            )
+                        }
+                        break
                     except Exception as e:
                         logger.error(f"MusicGen loading failed on attempt {retry_count + 1}: {e}")
                         retry_count += 1
                         if retry_count >= max_retries:
                             logger.error("Failed to load MusicGen after all retries, using fallback")
-                            def final_fallback_wrapper(**kwargs):
-                                return self._generate_fallback_music(
+                            self.models[model_key] = {
+                                "type": "fallback", 
+                                "loaded": True,
+                                "generate": lambda **kwargs: self._generate_fallback_music(
                                     descriptions=kwargs.get('descriptions', []),
                                     duration=kwargs.get('duration', 30.0),
                                     prompt=kwargs.get('prompt', None)
                                 )
-                            self.models[model_key] = {
-                                "type": "fallback", 
-                                "loaded": True,
-                                "generate": fallback_wrapper
                             }
             else:
                 logger.warning(f"Unknown music model: {model_type}")
@@ -2131,9 +2089,11 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
             if script_data and script_data.get('scenes'):
                 expanded_script = self.expand_script_if_needed(script_data)
+                logger.info(f"Using provided script data with {len(script_data.get('scenes', []))} scenes")
             else:
                 parsed_script = self.parse_input_script(input_path) if input_path else {}
                 expanded_script = self.expand_script_if_needed(parsed_script)
+                logger.info(f"Parsed script from {input_path}")
             
             self._save_llm_expansion_results(expanded_script, output_path)
             
