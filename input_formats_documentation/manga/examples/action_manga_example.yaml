@@ -1,0 +1,79 @@
+title: "Shadow Blade Chronicles Chapter 1"
+chapter_number: 1
+pages: 20
+style: "shounen_manga"
+reading_direction: "right_to_left"
+
+characters:
+  - name: "Ryu Shadowblade"
+    description: "Young ninja seeking to avenge his clan"
+    design: "black hair, ninja outfit, determined expression"
+  - name: "Master Kage"
+    description: "Mysterious mentor with hidden past"
+    design: "hooded figure, ancient weapons, wise eyes"
+  - name: "Akuma the Destroyer"
+    description: "Villain who destroyed Ryu's clan"
+    design: "dark armor, glowing red eyes, massive sword"
+
+pages:
+  - page_number: 1
+    panels:
+      - panel: 1
+        size: "full_page"
+        description: "Burning village under night sky"
+        text: "Ten years ago, the Shadow Clan was destroyed..."
+        type: "establishing"
+      
+  - page_number: 2
+    panels:
+      - panel: 1
+        size: "large"
+        description: "Young Ryu hiding behind burning building"
+        dialogue:
+          - speaker: "Young Ryu"
+            text: "Mother... Father... everyone..."
+        emotion: "grief"
+      
+      - panel: 2
+        size: "medium"
+        description: "Akuma's silhouette against flames"
+        dialogue:
+          - speaker: "Akuma"
+            text: "The Shadow Clan ends tonight."
+        emotion: "menacing"
+      
+      - panel: 3
+        size: "small"
+        description: "Ryu's eyes filled with determination"
+        sound_effect: "CLENCH!"
+        emotion: "resolve"
+
+  - page_number: 3
+    panels:
+      - panel: 1
+        size: "medium"
+        description: "Present day - Ryu training in forest"
+        text: "Ten years later..."
+        type: "time_skip"
+      
+      - panel: 2
+        size: "large"
+        description: "Ryu performing advanced sword techniques"
+        sound_effect: "SLASH! WHOOSH!"
+        emotion: "focused"
+      
+      - panel: 3
+        size: "medium"
+        description: "Master Kage watching from shadows"
+        dialogue:
+          - speaker: "Master Kage"
+            text: "Your training is nearly complete, Ryu."
+        emotion: "proud"
+      
+      - panel: 4
+        size: "small"
+        description: "Ryu's determined face"
+        dialogue:
+          - speaker: "Ryu"
+            text: "Soon, I'll have my revenge."
+        emotion: "determined"

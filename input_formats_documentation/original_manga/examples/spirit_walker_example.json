@@ -1,0 +1,247 @@
+{
+  "title": "Spirit Walker Chronicles: The Awakening",
+  "universe": "Modern Supernatural Japan",
+  "genre": "supernatural_action_with_slice_of_life_elements",
+  "art_style": "traditional_manga_with_spirit_effects",
+  "chapter": 1,
+  "pages": 20,
+  "reading_direction": "right_to_left",
+  
+  "world_building": {
+    "setting": "Modern Japan with hidden spirit realm overlay",
+    "magic_system": {
+      "name": "Spiritual Energy Manipulation",
+      "rules": [
+        "Spirits exist parallel to physical world",
+        "Most humans cannot see or interact with spirits",
+        "Spirit walkers can cross between realms at will",
+        "Emotional state directly affects spiritual power",
+        "Negative emotions attract malevolent spirits",
+        "Positive emotions strengthen protective barriers"
+      ],
+      "power_source": "Life force energy and emotional resonance",
+      "limitations": [
+        "Overuse causes physical and mental exhaustion",
+        "Strong negative emotions can corrupt abilities",
+        "Cannot force spirits to obey, must earn cooperation"
+      ]
+    },
+    "spirit_types": [
+      {
+        "name": "Guardian Spirits",
+        "description": "Protective entities that guide spirit walkers",
+        "appearance": "Animal forms with glowing eyes and ethereal aura"
+      },
+      {
+        "name": "Lost Souls",
+        "description": "Humans who died with unfinished business",
+        "appearance": "Translucent human forms with emotional auras"
+      },
+      {
+        "name": "Nature Spirits",
+        "description": "Embodiments of natural elements and locations",
+        "appearance": "Elemental forms that shift based on environment"
+      },
+      {
+        "name": "Shadow Wraiths",
+        "description": "Malevolent spirits that feed on negative emotions",
+        "appearance": "Dark, shifting forms with red eyes"
+      }
+    ]
+  },
+  
+  "characters": [
+    {
+      "name": "Yuki Spiritwalker",
+      "age": 15,
+      "role": "protagonist",
+      "background": "Ordinary high school student who awakens spirit sight after near-death experience",
+      "personality": "compassionate, determined, initially fearful but grows brave",
+      "appearance": "short black hair, traditional school uniform, spirit mark appears on forehead when powers active",
+      "family": "Lives with grandmother who secretly knows about spirit world",
+      "powers": [
+        {
+          "name": "Spirit Sight",
+          "description": "Can see and interact with spirits invisible to others",
+          "visual_effect": "glowing blue eyes with ethereal particles",
+          "development": "Starts weak, grows stronger with training and confidence"
+        },
+        {
+          "name": "Realm Walking",
+          "description": "Travel between physical and spirit worlds",
+          "visual_effect": "dimensional ripples, body becomes translucent",
+          "development": "Initially accidental, learns to control with practice"
+        },
+        {
+          "name": "Spirit Communication",
+          "description": "Speak with and understand all types of spirits",
+          "visual_effect": "glowing aura around mouth when speaking to spirits",
+          "development": "Natural ability that improves with experience"
+        }
+      ],
+      "character_arc": "From frightened teenager to confident protector of both worlds"
+    },
+    {
+      "name": "Kage the Shadow Guide",
+      "role": "mentor_spirit",
+      "background": "Ancient wolf spirit bound to protect spirit walkers for centuries",
+      "personality": "wise, protective, mysterious past, dry sense of humor",
+      "appearance": "Large wolf made of shifting shadows with glowing silver eyes",
+      "abilities": [
+        "Ancient knowledge of spirit realm",
+        "Can manifest physically for short periods",
+        "Senses malevolent spirits from great distances",
+        "Can teach spirit walking techniques"
+      ],
+      "relationship_to_protagonist": "Reluctant mentor who becomes father figure"
+    },
+    {
+      "name": "Hiroshi Tanaka",
+      "age": 16,
+      "role": "best_friend_and_potential_love_interest",
+      "background": "Yuki's childhood friend who notices her strange behavior",
+      "personality": "loyal, protective, skeptical but open-minded",
+      "appearance": "tall, athletic, concerned expression, school uniform",
+      "abilities": "No spiritual powers but strong emotional support",
+      "character_arc": "From confused friend to trusted ally who helps bridge both worlds"
+    },
+    {
+      "name": "Grandmother Akemi",
+      "age": 68,
+      "role": "hidden_mentor_and_family_connection",
+      "background": "Former spirit walker who gave up powers to live normal life",
+      "personality": "wise, caring, regretful about past choices",
+      "appearance": "Traditional elderly Japanese woman with knowing eyes",
+      "secrets": "Was powerful spirit walker in youth, knows about Yuki's destiny",
+      "character_arc": "From protective grandmother to revealed mentor"
+    }
+  ],
+  
+  "story_arcs": [
+    {
+      "arc_name": "The Awakening",
+      "chapters": [1, 2, 3],
+      "description": "Yuki discovers her powers and learns about the spirit realm",
+      "key_events": [
+        "Near-death experience triggers spirit sight",
+        "First encounter with Kage",
+        "Learning to control new abilities",
+        "Discovering grandmother's secret past"
+      ]
+    },
+    {
+      "arc_name": "First Guardian",
+      "chapters": [4, 5, 6],
+      "description": "Yuki's first major challenge protecting both worlds",
+      "key_events": [
+        "Malevolent spirit threatens school",
+        "Learning to fight spiritual threats",
+        "Hiroshi discovers Yuki's secret",
+        "First successful spirit realm mission"
+      ]
+    }
+  ],
+  
+  "scenes": [
+    {
+      "page": 1,
+      "panels": [
+        {
+          "panel_number": 1,
+          "size": "full_page_splash",
+          "description": "Yuki walking home from school on normal day, unaware of spirits around her",
+          "mood": "peaceful_ordinary_with_hidden_supernatural",
+          "dialogue": [],
+          "narration": "Some people say the world is exactly as we see it. Others know better.",
+          "visual_elements": ["spirits_invisible_to_yuki", "normal_street_scene", "foreshadowing_shadows"]
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "panels": [
+        {
+          "panel_number": 1,
+          "size": "medium",
+          "description": "Yuki notices strange shadows moving in peripheral vision",
+          "mood": "subtle_unease",
+          "dialogue": [
+            {
+              "speaker": "Yuki",
+              "text": "That's weird... I could have sworn I saw something move."
+            }
+          ],
+          "visual_elements": ["shadow_spirits_at_edge_of_vision", "yuki_looking_confused"]
+        },
+        {
+          "panel_number": 2,
+          "size": "large",
+          "description": "Yuki trips and falls into busy street, truck approaching",
+          "mood": "sudden_danger",
+          "sound_effects": ["SCREECH!", "HONK!"],
+          "visual_elements": ["motion_lines", "truck_headlights", "yuki_falling"]
+        },
+        {
+          "panel_number": 3,
+          "size": "small",
+          "description": "Close-up of Yuki's terrified face as truck approaches",
+          "mood": "life_threatening_moment",
+          "dialogue": [
+            {
+              "speaker": "Yuki",
+              "text": "I can't move!"
+            }
+          ],
+          "visual_elements": ["extreme_close_up", "fear_in_eyes", "truck_reflection"]
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "panels": [
+        {
+          "panel_number": 1,
+          "size": "large",
+          "description": "Mysterious force pushes Yuki to safety, first spirit sighting",
+          "mood": "supernatural_intervention",
+          "dialogue": [
+            {
+              "speaker": "Kage",
+              "text": "Not yet, young one. Your journey is just beginning."
+            }
+          ],
+          "visual_elements": ["shadow_wolf_pushing_yuki", "ethereal_glow", "truck_missing_yuki"]
+        },
+        {
+          "panel_number": 2,
+          "size": "medium",
+          "description": "Yuki on sidewalk, staring at where the wolf spirit was",
+          "mood": "confused_awakening",
+          "dialogue": [
+            {
+              "speaker": "Yuki",
+              "text": "What... what was that? Did I imagine it?"
+            }
+          ],
+          "visual_elements": ["yuki_sitting_on_ground", "fading_spirit_traces", "concerned_bystanders"]
+        }
+      ]
+    }
+  ],
+  
+  "visual_style_guide": {
+    "character_design": "Realistic proportions with expressive eyes and detailed emotions",
+    "spirit_effects": "Translucent overlays with glowing edges and particle effects",
+    "backgrounds": "Detailed modern Japanese settings with hidden supernatural elements",
+    "panel_layouts": "Traditional manga flow with dynamic action sequences",
+    "tone_effects": "Screen tones for atmosphere, white space for spiritual moments"
+  },
+  
+  "themes": [
+    "Coming of age and accepting responsibility",
+    "Balance between normal life and supernatural duty",
+    "The power of compassion and understanding",
+    "Bridging different worlds and perspectives",
+    "Family legacy and choosing your own path"
+  ]
+}

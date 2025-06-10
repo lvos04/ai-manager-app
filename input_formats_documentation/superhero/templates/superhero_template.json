@@ -1,0 +1,68 @@
+{
+  "title": "Your Original Superhero Story",
+  "universe_name": "Your Custom Universe",
+  "setting": {
+    "time_period": "modern/near_future/alternate_history",
+    "location": "Your City Name",
+    "technology_level": "current/advanced/mixed",
+    "supernatural_elements": true
+  },
+  "main_hero": {
+    "name": "Hero Name",
+    "secret_identity": "Real Name",
+    "age": 25,
+    "occupation": "Day job",
+    "origin_story": "How they got their powers",
+    "powers": [
+      {
+        "name": "Primary Power",
+        "description": "What the power does",
+        "visual_effect": "How it looks",
+        "limitations": "What limits the power"
+      }
+    ],
+    "costume": {
+      "primary_colors": ["color1", "color2"],
+      "design_elements": ["element1", "element2"],
+      "material": "costume material"
+    },
+    "personality": {
+      "traits": ["trait1", "trait2", "trait3"],
+      "flaws": ["flaw1", "flaw2"],
+      "motivation": "What drives them"
+    }
+  },
+  "supporting_characters": [
+    {
+      "name": "Supporting Character",
+      "role": "ally/mentor/friend",
+      "relationship": "relationship to hero",
+      "abilities": ["ability1", "ability2"]
+    }
+  ],
+  "villains": [
+    {
+      "name": "Main Villain",
+      "real_name": "Villain's real name",
+      "powers": ["power1", "power2"],
+      "motivation": "Why they're antagonistic",
+      "visual_style": "How they look"
+    }
+  ],
+  "story_arcs": [
+    {
+      "arc_name": "First Story Arc",
+      "episodes": [
+        {
+          "title": "Episode Title",
+          "description": "What happens in this episode",
+          "key_scenes": [
+            "Scene 1 description",
+            "Scene 2 description",
+            "Scene 3 description"
+          ]
+        }
+      ]
+    }
+  ]
+}

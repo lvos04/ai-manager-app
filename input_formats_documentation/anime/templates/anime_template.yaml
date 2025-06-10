@@ -1,0 +1,36 @@
+title: "Your Anime Episode Title"
+episode_number: 1
+duration: 1440  # 24 minutes
+style: "modern anime"
+
+characters:
+  - name: "Protagonist Name"
+    description: "Main character description"
+    voice_type: "young_male/young_female"
+    appearance: "Character appearance details"
+  - name: "Supporting Character"
+    description: "Supporting character description"
+    voice_type: "mature_male/mature_female"
+    appearance: "Character appearance details"
+
+scenes:
+  - number: 1
+    description: "Opening scene description"
+    duration: 180
+    characters: ["Protagonist Name"]
+    dialogue:
+      - speaker: "Protagonist Name"
+        text: "Opening dialogue here"
+    setting: "Scene location and environment"
+    
+  - number: 2
+    description: "Main story scene"
+    duration: 240
+    characters: ["Protagonist Name", "Supporting Character"]
+    dialogue:
+      - speaker: "Protagonist Name"
+        text: "Character dialogue"
+      - speaker: "Supporting Character"
+        text: "Response dialogue"
+    action: "Action sequence description"
+    setting: "Scene setting details"

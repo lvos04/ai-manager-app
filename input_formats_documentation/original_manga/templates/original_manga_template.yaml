@@ -1,0 +1,60 @@
+universe: "Your Original Universe Name"
+title: "Chapter 1: Your Chapter Title"
+style: "manga_art_style"
+art_style: "detailed_black_and_white"
+reading_direction: "right_to_left"
+
+world_setting:
+  location: "Your fictional world location"
+  technology_level: "technology description"
+  society: "social structure"
+  atmosphere: "world mood and feel"
+
+main_characters:
+  - name: "Protagonist Name"
+    age: 16
+    role: "protagonist"
+    background: "Character background"
+    personality: "personality traits"
+    appearance: "visual description"
+    abilities: ["ability1", "ability2"]
+    
+  - name: "Supporting Character"
+    age: 17
+    role: "ally/rival/mentor"
+    background: "Character background"
+    personality: "personality traits"
+    appearance: "visual description"
+    abilities: ["ability1", "ability2"]
+
+story_structure:
+  theme: "main theme of your story"
+  conflict: "central conflict"
+  setting_rules:
+    - "Rule 1 of your world"
+    - "Rule 2 of your world"
+    - "Rule 3 of your world"
+
+scenes:
+  - scene_number: 1
+    description: "Opening scene description"
+    panel_layout: "panel arrangement style"
+    mood: "scene atmosphere"
+    dialogue:
+      - speaker: "Character Name"
+        text: "What they say"
+        emotion: "how they feel"
+    
+  - scene_number: 2
+    description: "Second scene description"
+    panel_layout: "panel arrangement style"
+    mood: "scene atmosphere"
+    dialogue:
+      - speaker: "Character Name"
+        text: "Dialogue text"
+        emotion: "emotional state"
+
+visual_style:
+  panel_types: ["splash_page", "action_sequence", "dialogue_close_up"]
+  effects: ["special_effect1", "special_effect2"]
+  backgrounds: ["background_type1", "background_type2"]

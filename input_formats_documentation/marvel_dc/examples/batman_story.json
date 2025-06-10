@@ -1,0 +1,84 @@
+{
+  "title": "Batman: Shadows of Gotham",
+  "universe": "DC",
+  "setting": "Gotham City",
+  "tone": "dark_and_gritty",
+  
+  "main_character": {
+    "hero_name": "Batman",
+    "secret_identity": "Bruce Wayne",
+    "powers": ["martial_arts_mastery", "detective_skills", "advanced_technology"],
+    "costume": "Dark cape and cowl with bat symbol",
+    "personality": ["brooding", "determined", "compassionate_beneath_surface"]
+  },
+  
+  "supporting_characters": [
+    {
+      "name": "Alfred Pennyworth",
+      "role": "butler_and_father_figure",
+      "relationship": "Loyal servant who raised Bruce after parents' death"
+    },
+    {
+      "name": "Commissioner Gordon",
+      "role": "police_ally",
+      "relationship": "Trusted law enforcement contact"
+    },
+    {
+      "name": "Robin (Tim Drake)",
+      "role": "sidekick",
+      "relationship": "Young protégé learning to be a hero"
+    }
+  ],
+  
+  "villain": {
+    "name": "The Joker",
+    "real_name": "Unknown",
+    "powers": ["unpredictability", "chemical_weapons", "psychological_warfare"],
+    "motivation": "Prove that anyone can be driven to madness",
+    "connection_to_hero": "Philosophical opposite - chaos vs order"
+  },
+  
+  "story_structure": {
+    "act_1": {
+      "setup": "Series of seemingly random crimes plague Gotham",
+      "inciting_incident": "Joker escapes from Arkham Asylum",
+      "batman_investigation": "Bruce begins connecting the dots"
+    },
+    "act_2": {
+      "escalation": "Joker's crimes become more personal and dangerous",
+      "midpoint": "Joker captures someone close to Batman",
+      "dark_moment": "Batman must choose between saving lives and catching Joker"
+    },
+    "act_3": {
+      "climax": "Final confrontation at Ace Chemicals",
+      "resolution": "Joker stopped but escapes to fight another day",
+      "character_growth": "Batman reaffirms his no-kill rule despite temptation"
+    }
+  },
+  
+  "themes": [
+    "Justice vs vengeance",
+    "The thin line between hero and vigilante",
+    "How trauma shapes us but doesn't define us",
+    "The importance of hope in darkness"
+  ],
+  
+  "key_scenes": [
+    {
+      "scene": "Batman investigates crime scene using detective skills",
+      "purpose": "Show Batman's analytical abilities"
+    },
+    {
+      "scene": "Joker's first appearance with signature laugh",
+      "purpose": "Establish the villain's menacing presence"
+    },
+    {
+      "scene": "Batman and Robin working together",
+      "purpose": "Show mentorship and teamwork"
+    },
+    {
+      "scene": "Final battle with moral choice",
+      "purpose": "Test Batman's principles under pressure"
+    }
+  ]
+}

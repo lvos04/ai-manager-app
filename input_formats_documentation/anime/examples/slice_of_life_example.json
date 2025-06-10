@@ -1,0 +1,77 @@
+{
+  "title": "Cherry Blossom High School",
+  "genre": "slice_of_life",
+  "art_style": "traditional_anime",
+  "episode_number": 1,
+  "characters": [
+    {
+      "name": "Hana Sakura",
+      "role": "protagonist",
+      "personality": "cheerful, optimistic, slightly clumsy",
+      "design_notes": "pink hair in twin tails, bright school uniform",
+      "voice_type": "young_female"
+    },
+    {
+      "name": "Yuki Tanaka",
+      "role": "best_friend",
+      "personality": "calm, studious, supportive",
+      "design_notes": "short black hair, glasses, neat appearance",
+      "voice_type": "young_female"
+    },
+    {
+      "name": "Takeshi Yamamoto",
+      "role": "love_interest",
+      "personality": "kind, athletic, popular",
+      "design_notes": "brown hair, sports uniform, friendly smile",
+      "voice_type": "young_male"
+    }
+  ],
+  "episodes": [
+    {
+      "title": "First Day of Spring",
+      "scenes": [
+        {
+          "description": "Hana's morning routine in traditional Japanese home",
+          "mood": "peaceful",
+          "duration": 120,
+          "dialogue": [
+            {
+              "speaker": "Hana Sakura",
+              "text": "Another beautiful spring day! I can't wait to see everyone at school!"
+            }
+          ]
+        },
+        {
+          "description": "Walking to school with Yuki under cherry blossoms",
+          "mood": "cheerful",
+          "duration": 180,
+          "dialogue": [
+            {
+              "speaker": "Yuki Tanaka",
+              "text": "The cherry blossoms are especially beautiful this year."
+            },
+            {
+              "speaker": "Hana Sakura",
+              "text": "Just like in the movies! I hope this year brings lots of wonderful memories."
+            }
+          ]
+        },
+        {
+          "description": "Accidental meeting with Takeshi at school entrance",
+          "mood": "romantic_comedy",
+          "duration": 150,
+          "dialogue": [
+            {
+              "speaker": "Hana Sakura",
+              "text": "Oh no! I'm so sorry!"
+            },
+            {
+              "speaker": "Takeshi Yamamoto",
+              "text": "Don't worry about it. Are you okay?"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

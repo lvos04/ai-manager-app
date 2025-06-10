@@ -1,0 +1,35 @@
+PAGE 1
+
+PANEL 1 (Full page splash)
+DESCRIPTION: Wide establishing shot of your manga world
+CAPTION: "Opening narration or setting description"
+
+PAGE 2
+
+PANEL 1 (Large, top half)
+DESCRIPTION: Close-up of main character
+CHARACTER NAME: "Opening dialogue"
+EMOTION: Character's emotional state
+
+PANEL 2 (Medium, bottom left)
+DESCRIPTION: Action or reaction scene
+SFX: Sound effect if needed
+
+PANEL 3 (Medium, bottom right)
+DESCRIPTION: Character response or scene transition
+CHARACTER NAME: "Response dialogue"
+EMOTION: Character's emotional state
+
+PAGE 3
+
+PANEL 1 (Medium, top)
+DESCRIPTION: Scene continuation
+CHARACTER NAME: "Dialogue continues"
+
+PANEL 2 (Large, middle)
+DESCRIPTION: Main action or dramatic moment
+SFX: Action sound effects
+
+PANEL 3 (Small, bottom)
+DESCRIPTION: Reaction or cliffhanger
+CHARACTER NAME: "Final dialogue for page"

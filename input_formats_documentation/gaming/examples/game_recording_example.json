@@ -1,0 +1,61 @@
+{
+  "title": "Cyberpunk 2077 Epic Playthrough",
+  "game": "Cyberpunk 2077",
+  "duration": 2400,
+  "highlights": [
+    {
+      "timestamp": 180,
+      "duration": 45,
+      "description": "Intense car chase through Night City",
+      "intensity": "high"
+    },
+    {
+      "timestamp": 720,
+      "duration": 60,
+      "description": "Stealth infiltration of corporate building",
+      "intensity": "medium"
+    },
+    {
+      "timestamp": 1200,
+      "duration": 90,
+      "description": "Boss fight against cybernetic enemy",
+      "intensity": "high"
+    },
+    {
+      "timestamp": 1800,
+      "duration": 30,
+      "description": "Emotional story moment with companion",
+      "intensity": "low"
+    }
+  ],
+  "scenes": [
+    {
+      "description": "Character creation and opening sequence",
+      "duration": 120,
+      "style": "cinematic"
+    },
+    {
+      "description": "First mission briefing and preparation",
+      "duration": 180,
+      "style": "narrative"
+    },
+    {
+      "description": "Main gameplay action sequences",
+      "duration": 1800,
+      "style": "action_packed"
+    },
+    {
+      "description": "Story resolution and character development",
+      "duration": 300,
+      "style": "dramatic"
+    }
+  ],
+  "metadata": {
+    "player": "NightCityRunner",
+    "difficulty": "Hard",
+    "platform": "PC",
+    "recording_quality": "1440p",
+    "game_version": "2.0",
+    "mods_used": ["visual_enhancement", "gameplay_tweaks"]
+  }
+}

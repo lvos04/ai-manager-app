@@ -1,0 +1,15 @@
+Scene 1: Player enters the game world
+Duration: 45 seconds
+Style: Atmospheric introduction
+
+Scene 2: Main gameplay action
+Duration: 180 seconds
+Style: Dynamic, fast-paced
+
+Scene 3: Boss fight or climactic moment
+Duration: 120 seconds
+Style: Epic, dramatic
+
+Scene 4: Victory or conclusion
+Duration: 30 seconds
+Style: Satisfying resolution

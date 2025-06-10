@@ -1,0 +1,24 @@
+Scene 1: Loading into Elden Ring
+Duration: 30 seconds
+Style: Atmospheric, mysterious
+Description: Character spawns in the Lands Between, overlooking the vast open world
+
+Scene 2: First boss encounter preparation
+Duration: 90 seconds
+Style: Tense, strategic
+Description: Player approaches Margit the Fell Omen, studying attack patterns
+
+Scene 3: Epic boss battle
+Duration: 240 seconds
+Style: Intense, dynamic
+Description: Full boss fight with dodging, attacking, and strategic gameplay
+
+Scene 4: Victory celebration
+Duration: 45 seconds
+Style: Triumphant, satisfying
+Description: Boss defeated, player collects rewards and levels up
+
+Scene 5: Exploration of new area
+Duration: 120 seconds
+Style: Wonder, discovery
+Description: Player explores the castle area unlocked after boss victory
