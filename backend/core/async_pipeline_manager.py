@@ -198,7 +198,7 @@ class AsyncPipelineManager:
             logger.error(f"Async pipeline execution failed: {e}")
             import traceback
             traceback.print_exc()
-            from ...utils.error_handler import PipelineErrorHandler
+            from ..utils.error_handler import PipelineErrorHandler
             return PipelineErrorHandler.handle_pipeline_error(
                 e, "async_pipeline", project_data.get('output_path', '/tmp/pipeline_output'), project_data
             )

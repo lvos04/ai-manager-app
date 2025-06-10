@@ -401,7 +401,7 @@ def get_queue_status():
         "is_processing": is_processing
     }
 
-async def extract_scenes_from_pipeline(pipeline_module, input_path: str, channel_type: str) -> List[Dict]:
+async def extract_scenes_from_pipeline(input_path: str, channel_type: str, output_path: str = "/tmp/scenes_output") -> List[Dict]:
     """
     Extract scenes from channel-specific pipeline without running full pipeline.
     This includes LLM preparation and script expansion.

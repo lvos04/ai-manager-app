@@ -18,7 +18,7 @@ async def test_yaml_processing():
     
     print("Testing YAML script processing...")
     
-    scenes = await extract_scenes_from_pipeline(input_path, "anime")
+    scenes = await extract_scenes_from_pipeline(input_path, "anime", "/tmp/yaml_test_output")
     
     print(f"Extracted {len(scenes)} scenes:")
     for i, scene in enumerate(scenes):
