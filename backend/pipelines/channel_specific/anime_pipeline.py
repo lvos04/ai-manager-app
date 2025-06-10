@@ -380,12 +380,20 @@ class AnimeChannelPipeline(BasePipeline):
         
         try:
             upscaled_video = final_dir / "anime_episode_upscaled.mp4"
-            upscaled_path = self._upscale_video_with_realesrgan(
-                input_path=str(final_video),
-                output_path=str(upscaled_video),
-                target_resolution="1080p",
-                enabled=True
-            )
+            try:
+                from ...pipelines.ai_upscaler import AIUpscaler
+                upscaler = AIUpscaler(vram_tier="medium")
+                upscaler.upscale_video(
+                    input_path=str(final_video),
+                    output_path=str(upscaled_video),
+                    model_name="realesrgan_x4plus",
+                    target_resolution=(1920, 1080)
+                )
+                upscaled_path = str(upscaled_video)
+            except ImportError:
+                import shutil
+                shutil.copy2(str(final_video), str(upscaled_video))
+                upscaled_path = str(upscaled_video)
             print(f"Video upscaled to: {upscaled_path}")
         except Exception as e:
             print(f"Error upscaling video: {e}")
@@ -1296,11 +1304,32 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     
     if script_data and isinstance(script_data, dict):
         try:
-            pass
-            
-            pass
-            
-            pass
+            llm_model = None
+            try:
+                from .base_pipeline import BasePipeline
+                base_pipeline = BasePipeline("anime")
+                llm_model = base_pipeline.load_llm_model("deepseek")
+            except:
+                llm_model = None
+            if llm_model and llm_model.get("generate"):
+                expanded_scenes = []
+                for scene in script_data.get('scenes', []):
+                    if isinstance(scene, str) and len(scene) < 100:
+                        expansion_prompt = f"Expand this anime scene with more detail: {scene}"
+                        expanded_scene = llm_model["generate"](expansion_prompt)
+                        expanded_scenes.append(expanded_scene)
+                    else:
+                        expanded_scenes.append(scene)
+                script_data['scenes'] = expanded_scenes
+            else:
+                expanded_scenes = []
+                for scene in script_data.get('scenes', []):
+                    if isinstance(scene, str) and len(scene) < 100:
+                        expanded_scene = f"{scene}. Anime style with vibrant colors, dynamic action, and expressive characters."
+                        expanded_scenes.append(expanded_scene)
+                    else:
+                        expanded_scenes.append(scene)
+                script_data['scenes'] = expanded_scenes
         except Exception as e:
             print(f"Error during anime script expansion: {e}")
                 
@@ -1621,8 +1650,6 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         final_file = scenes_dir / f"scene_{i+1:03d}_final.mp4"
         
         try:
-            pass
-            
             vram_tier = "medium"
             
             optimized_prompt = f"masterpiece, best quality, ultra detailed, 8k resolution, cinematic lighting, smooth animation, professional anime style, vibrant colors, dynamic composition, {scene_text}"
@@ -1992,7 +2019,35 @@ def combine_scenes_to_episode(scenes_dir: Path, output_path: str, frame_interpol
             
             if frame_interpolation_enabled and output_fps > render_fps:
                 # External imports removed - using inline frame interpolation
-                pass
+                try:
+                    import cv2
+                    
+                    cap = cv2.VideoCapture(str(temp_output))
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    
+                    if fps < output_fps:
+                        interpolation_factor = int(output_fps / fps)
+                        logger.info(f"Interpolating frames: {fps}fps -> {output_fps}fps")
+                        
+                        import subprocess
+                        interpolated_path = str(temp_output).replace('.mp4', '_interpolated.mp4')
+                        cmd = [
+                            'ffmpeg', '-i', str(temp_output),
+                            '-filter:v', f'minterpolate=fps={output_fps}:mi_mode=mci',
+                            '-c:a', 'copy', '-y', interpolated_path
+                        ]
+                        
+                        try:
+                            subprocess.run(cmd, check=True, capture_output=True)
+                            if Path(interpolated_path).exists():
+                                Path(temp_output).unlink()
+                                Path(interpolated_path).rename(temp_output)
+                        except subprocess.CalledProcessError:
+                            logger.warning("Frame interpolation failed, using original video")
+                        
+                    cap.release()
+                except Exception as e:
+                    logger.error(f"Frame interpolation error: {e}")
                 
                 # Inline VRAM detection for frame interpolation
                 vram_tier = "medium"

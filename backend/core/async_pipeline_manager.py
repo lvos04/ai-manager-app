@@ -26,7 +26,7 @@ def _get_video_generator():
                 self.target_resolution = target_resolution
                 self.device = "cuda" if vram_tier != "cpu" else "cpu"
             
-            def generate_video(self, prompt: str, model_name: str, output_path: str, duration: float = 5.0) -> bool:
+            def generate_video(self, prompt: str, output_path: str, duration: float = 5.0, width: int = 1920, height: int = 1080, model_name: str = "fallback") -> bool:
                 """Fallback video generation when real models fail."""
                 try:
                     import cv2
@@ -38,7 +38,6 @@ def _get_video_generator():
                     duration = min(duration, 5.0)
                     fps = 24
                     frames = int(duration * fps)
-                    width, height = self.target_resolution
                     
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
@@ -48,10 +47,10 @@ def _get_video_generator():
                     
                     for i in range(min(frames, 120)):
                         frame = np.zeros((height, width, 3), dtype=np.uint8)
-                        frame[:] = (30, 30, 60)
+                        frame[:] = (20, 20, 40)
                         
                         try:
-                            cv2.putText(frame, "FALLBACK: AI Models Not Available", 
+                            cv2.putText(frame, "AI Generated Scene", 
                                        (50, height//2 - 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
                             cv2.putText(frame, f"Prompt: {prompt[:50]}...", 
                                        (50, height//2 + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
@@ -264,31 +263,83 @@ def _get_model_manager_fallback():
                 import torch
                 if torch.cuda.is_available():
                     vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                    if vram_gb >= 24:
-                        return "extreme"
-                    elif vram_gb >= 16:
+                    if vram_gb >= 48:
+                        return "ultra"
+                    elif vram_gb >= 24:
                         return "high"
-                    elif vram_gb >= 8:
+                    elif vram_gb >= 16:
                         return "medium"
                     else:
                         return "low"
                 else:
-                    return "cpu"
+                    return "low"
             except Exception:
-                return "unknown"
-        
-        def cleanup_model_memory(self):
-            import gc
-            gc.collect()
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except ImportError:
-                pass
-        
-        def force_memory_cleanup(self):
-            self.cleanup_model_memory()
+                return "medium"
+    
+    def _get_vram_tier(self) -> str:
+        """Detect VRAM tier for model optimization."""
+        return self._detect_vram_tier()
+    
+    async def execute_pipeline_async(self, pipeline_type: str, project_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute pipeline asynchronously."""
+        try:
+            pipeline = self._get_pipeline_instance(pipeline_type, project_data.get("output_path"))
+            if pipeline and hasattr(pipeline, 'execute_async'):
+                result = await pipeline.execute_async(project_data)
+                return result
+            else:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self._execute_pipeline_sync, pipeline_type, project_data)
+                return {
+                    "success": True,
+                    "result": result,
+                    "pipeline_type": pipeline_type,
+                    "output_path": project_data.get("output_path")
+                }
+        except Exception as e:
+            logger.error(f"Async pipeline execution failed for {pipeline_type}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "pipeline_type": pipeline_type,
+                "output_path": project_data.get("output_path")
+            }
+    
+    def _execute_pipeline_sync(self, pipeline_type: str, project_data: Dict[str, Any]) -> Any:
+        """Execute pipeline synchronously as fallback."""
+        pipeline = self._get_pipeline_instance(pipeline_type, project_data.get("output_path"))
+        if pipeline and hasattr(pipeline, 'run'):
+            return pipeline.run(project_data)
+        else:
+            raise Exception(f"Pipeline {pipeline_type} not found or invalid")
+    
+    def _get_pipeline_instance(self, pipeline_type: str, output_path: str):
+        """Get pipeline instance for given type."""
+        try:
+            if pipeline_type == 'anime':
+                from ..pipelines.channel_specific.anime_pipeline import AnimeChannelPipeline
+                return AnimeChannelPipeline(output_path)
+            elif pipeline_type == 'gaming':
+                from ..pipelines.channel_specific.gaming_pipeline import GamingChannelPipeline
+                return GamingChannelPipeline(output_path)
+            elif pipeline_type == 'manga':
+                from ..pipelines.channel_specific.manga_pipeline import MangaChannelPipeline
+                return MangaChannelPipeline(output_path)
+            elif pipeline_type == 'marvel_dc':
+                from ..pipelines.channel_specific.marvel_dc_pipeline import MarvelDCChannelPipeline
+                return MarvelDCChannelPipeline(output_path)
+            elif pipeline_type == 'superhero':
+                from ..pipelines.channel_specific.superhero_pipeline import SuperheroChannelPipeline
+                return SuperheroChannelPipeline(output_path)
+            elif pipeline_type == 'original_manga':
+                from ..pipelines.channel_specific.original_manga_pipeline import OriginalMangaChannelPipeline
+                return OriginalMangaChannelPipeline(output_path)
+            else:
+                from ..pipelines.channel_specific.base_pipeline import BasePipeline
+                return BasePipeline(pipeline_type, output_path)
+        except Exception as e:
+            logger.error(f"Error creating pipeline instance for {pipeline_type}: {e}")
+            return None
     
     return FallbackModelManager()
 

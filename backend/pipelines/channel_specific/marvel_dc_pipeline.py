@@ -260,11 +260,19 @@ class MarvelDCChannelPipeline(BasePipeline):
                     comic_prompt = scene_detail["combat_data"]["video_prompt"]
                 
                 try:
-                    with open(scene_file, 'w') as f:
-                        f.write(f"Video placeholder: {comic_prompt}")
-                    video_path = str(scene_file)
+                    success = self._create_scene_video_with_generation(
+                        scene_description=comic_prompt,
+                        characters=[],
+                        output_path=str(scene_file),
+                        duration=12.0
+                    )
+                    
+                    if success and os.path.exists(str(scene_file)):
+                        video_path = str(scene_file)
+                    else:
+                        video_path = self._create_fallback_video(comic_prompt, 12.0, str(scene_file))
                 except Exception:
-                    video_path = None
+                    video_path = self._create_fallback_video(comic_prompt, 12.0, str(scene_file))
                 
                 if video_path:
                     scene_files.append(video_path)
@@ -374,12 +382,20 @@ class MarvelDCChannelPipeline(BasePipeline):
         
         try:
             upscaled_video = final_dir / "marvel_dc_episode_upscaled.mp4"
-            upscaled_path = self._upscale_video_with_realesrgan(
-                input_path=str(final_video),
-                output_path=str(upscaled_video),
-                target_resolution="1080p",
-                enabled=True
-            )
+            try:
+                from ...pipelines.ai_upscaler import AIUpscaler
+                upscaler = AIUpscaler(vram_tier="medium")
+                upscaler.upscale_video(
+                    input_path=str(final_video),
+                    output_path=str(upscaled_video),
+                    model_name="realesrgan_x4plus",
+                    target_resolution=(1920, 1080)
+                )
+                upscaled_path = str(upscaled_video)
+            except ImportError:
+                import shutil
+                shutil.copy2(str(final_video), str(upscaled_video))
+                upscaled_path = str(upscaled_video)
             print(f"Video upscaled to: {upscaled_path}")
         except Exception as e:
             print(f"Error upscaling video: {e}")

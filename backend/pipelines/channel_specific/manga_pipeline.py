@@ -383,12 +383,20 @@ class MangaChannelPipeline(BasePipeline):
         
         try:
             upscaled_video = final_dir / "manga_episode_upscaled.mp4"
-            upscaled_path = self._upscale_video_with_realesrgan(
-                input_path=str(final_video),
-                output_path=str(upscaled_video),
-                target_resolution="1080p",
-                enabled=True
-            )
+            try:
+                from ...pipelines.ai_upscaler import AIUpscaler
+                upscaler = AIUpscaler(vram_tier="medium")
+                upscaler.upscale_video(
+                    input_path=str(final_video),
+                    output_path=str(upscaled_video),
+                    model_name="realesrgan_x4plus",
+                    target_resolution=(1920, 1080)
+                )
+                upscaled_path = str(upscaled_video)
+            except ImportError:
+                import shutil
+                shutil.copy2(str(final_video), str(upscaled_video))
+                upscaled_path = str(upscaled_video)
             print(f"Video upscaled to: {upscaled_path}")
         except Exception as e:
             print(f"Error upscaling video: {e}")

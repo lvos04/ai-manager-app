@@ -290,7 +290,46 @@ class CharacterMemoryManager:
     
     def cleanup_old_references(self, days_old: int = 30):
         """Clean up old character references to save space."""
-        pass
+        try:
+            import time
+            from datetime import datetime, timedelta
+            
+            cutoff_date = datetime.now() - timedelta(days=days_old)
+            cutoff_timestamp = cutoff_date.timestamp()
+            
+            characters_to_remove = []
+            
+            for char_id, char_data in self.character_db.items():
+                ref_images = char_data.get("reference_images", [])
+                updated_refs = []
+                
+                for ref in ref_images:
+                    ref_path = Path(ref.get("path", ""))
+                    if ref_path.exists():
+                        if ref_path.stat().st_mtime > cutoff_timestamp:
+                            updated_refs.append(ref)
+                        else:
+                            try:
+                                ref_path.unlink()
+                                logger.info(f"Removed old reference: {ref_path}")
+                            except Exception as e:
+                                logger.error(f"Error removing {ref_path}: {e}")
+                
+                if len(updated_refs) != len(ref_images):
+                    self.character_db[char_id]["reference_images"] = updated_refs
+                    
+                if not updated_refs and not char_data.get("projects"):
+                    characters_to_remove.append(char_id)
+            
+            for char_id in characters_to_remove:
+                del self.character_db[char_id]
+                logger.info(f"Removed unused character: {char_id}")
+            
+            self._save_character_database()
+            logger.info(f"Cleanup complete: removed {len(characters_to_remove)} characters")
+            
+        except Exception as e:
+            logger.error(f"Error during character cleanup: {e}")
 
 _character_memory_manager = None
 
