@@ -467,32 +467,25 @@ class GamingChannelPipeline(BasePipeline):
         try:
             shorts_dir.mkdir(parents=True, exist_ok=True)
             
-            main_video_path = None
-            base_path = self.output_path if self.output_path else Path("./output")
-            potential_paths = [
-                base_path / "final" / "gaming_compilation.mp4",
-                base_path / "final" / "gaming_episode.mp4",
-                base_path / "final" / "temp_combined.mp4"
+            main_video_candidates = [
+                shorts_dir.parent / "final" / "gaming_compilation.mp4",
+                shorts_dir.parent / "final" / "gaming_episode.mp4",
+                shorts_dir.parent / "final" / "temp_combined.mp4"
             ]
             
-            for potential_path in potential_paths:
-                if potential_path.exists() and potential_path.stat().st_size > 1000:
-                    main_video_path = str(potential_path)
-                    logger.info(f"Found main video for shorts: {main_video_path}")
+            main_video_path = None
+            for candidate in main_video_candidates:
+                if candidate.exists() and candidate.stat().st_size > 1000:
+                    main_video_path = str(candidate)
                     break
-            
-            if not main_video_path:
-                for scene_file in scene_files:
-                    if os.path.exists(scene_file) and os.path.getsize(scene_file) > 1000:
-                        main_video_path = scene_file
-                        logger.info(f"Using scene file for shorts: {main_video_path}")
-                        break
             
             if not main_video_path:
                 logger.warning("No suitable video found for shorts extraction")
                 return []
             
-            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=5)
+            logger.info(f"Extracting gaming shorts from: {main_video_path}")
+            
+            highlights = self.extract_highlights_from_video(main_video_path, num_highlights=3)
             
             if not highlights:
                 logger.warning("No highlights extracted from main video")
@@ -503,26 +496,37 @@ class GamingChannelPipeline(BasePipeline):
             for i, highlight in enumerate(highlights):
                 short_path = shorts_dir / f"gaming_short_{i+1:02d}.mp4"
                 
-                short_data = self.create_short_from_highlight(
-                    main_video_path,
-                    highlight,
-                    str(short_path),
-                    i + 1
-                )
-                
-                if short_data and os.path.exists(str(short_path)):
-                    shorts_paths.append(str(short_path))
-                    logger.info(f"Created gaming short {i+1}: {short_data.get('title', 'Untitled')}")
-                else:
-                    logger.warning(f"Failed to create short {i+1}")
+                try:
+                    import subprocess
+                    
+                    start_time = highlight.get('start_time', 0)
+                    duration = min(highlight.get('duration', 15), 60)
+                    
+                    cmd = [
+                        'ffmpeg', '-i', main_video_path,
+                        '-ss', str(start_time),
+                        '-t', str(duration),
+                        '-c:v', 'libx264', '-c:a', 'aac',
+                        '-aspect', '16:9',
+                        '-y', str(short_path)
+                    ]
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0 and short_path.exists():
+                        shorts_paths.append(str(short_path))
+                        logger.info(f"Created gaming short {i+1}: {short_path}")
+                    else:
+                        logger.error(f"Failed to create short {i+1}: {result.stderr}")
+                        
+                except Exception as e:
+                    logger.error(f"Error creating short {i+1}: {e}")
+                    continue
             
-            logger.info(f"Successfully created {len(shorts_paths)} gaming shorts")
             return shorts_paths
             
         except Exception as e:
-            logger.error(f"Error creating gaming shorts: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error in shorts creation: {e}")
             return []
     
     def _create_fallback_gaming_content(self, output_dir: Path, language: str) -> str:

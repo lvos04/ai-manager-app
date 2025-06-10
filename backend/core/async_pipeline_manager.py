@@ -149,34 +149,42 @@ class AsyncPipelineManager:
                 "processing_time": time.time() - start_time
             }
     
-    async def execute_pipeline_async(self, project_data):
+    async def execute_pipeline_async(self, scenes_or_project_data, pipeline_config=None):
         """Execute pipeline asynchronously with proper error handling."""
         try:
             logger.info("Starting async pipeline execution")
             
+            if pipeline_config is not None:
+                scenes = scenes_or_project_data
+                project_data = pipeline_config.copy()
+                project_data['scenes'] = scenes
+            else:
+                project_data = scenes_or_project_data
+                scenes = project_data.get('scenes', [])
+            
             channel_type = project_data.get('channel_type', 'anime')
             
             if channel_type == 'anime':
-                from backend.pipelines.channel_specific.anime_pipeline import AnimePipeline
-                pipeline = AnimePipeline()
+                from ..pipelines.channel_specific.anime_pipeline import AnimeChannelPipeline
+                pipeline = AnimeChannelPipeline()
             elif channel_type == 'gaming':
-                from backend.pipelines.channel_specific.gaming_pipeline import GamingPipeline
-                pipeline = GamingPipeline()
+                from ..pipelines.channel_specific.gaming_pipeline import GamingChannelPipeline
+                pipeline = GamingChannelPipeline()
             elif channel_type == 'manga':
-                from backend.pipelines.channel_specific.manga_pipeline import MangaPipeline
-                pipeline = MangaPipeline()
+                from ..pipelines.channel_specific.manga_pipeline import MangaChannelPipeline
+                pipeline = MangaChannelPipeline()
             elif channel_type == 'marvel_dc':
-                from backend.pipelines.channel_specific.marvel_dc_pipeline import MarvelDCPipeline
-                pipeline = MarvelDCPipeline()
+                from ..pipelines.channel_specific.marvel_dc_pipeline import MarvelDCChannelPipeline
+                pipeline = MarvelDCChannelPipeline()
             elif channel_type == 'superhero':
-                from backend.pipelines.channel_specific.superhero_pipeline import SuperheroPipeline
-                pipeline = SuperheroPipeline()
+                from ..pipelines.channel_specific.superhero_pipeline import SuperheroChannelPipeline
+                pipeline = SuperheroChannelPipeline()
             elif channel_type == 'original_manga':
-                from backend.pipelines.channel_specific.original_manga_pipeline import OriginalMangaPipeline
-                pipeline = OriginalMangaPipeline()
+                from ..pipelines.channel_specific.original_manga_pipeline import OriginalMangaChannelPipeline
+                pipeline = OriginalMangaChannelPipeline()
             else:
-                from backend.pipelines.channel_specific.base_pipeline import BasePipeline
-                pipeline = BasePipeline()
+                from ..pipelines.channel_specific.base_pipeline import BasePipeline
+                pipeline = BasePipeline(channel_type)
             
             result = await pipeline.execute_async(project_data)
             
@@ -187,7 +195,10 @@ class AsyncPipelineManager:
             logger.error(f"Async pipeline execution failed: {e}")
             import traceback
             traceback.print_exc()
-            raise
+            from ...utils.error_handler import PipelineErrorHandler
+            return PipelineErrorHandler.handle_pipeline_error(
+                e, "async_pipeline", project_data.get('output_path', '/tmp/pipeline_output'), project_data
+            )
 
 def _get_pipeline_utils():
     """Inline pipeline utilities to replace pipeline_utils."""
