@@ -32,6 +32,8 @@ class MultiLanguagePipelineManager:
         
         base_config.update({
             "output_path": str(base_video_path),
+            "input_path": config.get("input_path", ""),
+            "script_data": config.get("script_data", {}),
             "language": "en",
             "audio_only": False,
             "generate_base_video": True
@@ -110,6 +112,8 @@ class MultiLanguagePipelineManager:
         lang_config = config.copy()
         lang_config.update({
             "output_path": str(lang_output_dir),
+            "input_path": config.get("input_path", ""),
+            "script_data": config.get("script_data", {}),
             "language": language_code,
             "voice_language": language_manager.get_voice_language_code(language_code),
             "llm_language_prompt": language_manager.get_llm_language_prompt(language_code),

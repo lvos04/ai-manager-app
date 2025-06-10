@@ -154,12 +154,29 @@ async def run_pipeline_async(project_id: int, pipeline_run_id: int, db: Session)
                     {"description": "Scene 2", "dialogue": "This is a test", "duration": 8.0}
                 ]
         
+        script_data = {}
+        if input_path and os.path.exists(input_path):
+            try:
+                if input_path.endswith('.yaml') or input_path.endswith('.yml'):
+                    import yaml
+                    with open(input_path, 'r', encoding='utf-8') as f:
+                        script_data = yaml.safe_load(f) or {}
+                elif input_path.endswith('.json'):
+                    import json
+                    with open(input_path, 'r', encoding='utf-8') as f:
+                        script_data = json.load(f) or {}
+            except Exception as e:
+                logger.error(f"Failed to load script data: {e}")
+                script_data = {}
+        
         pipeline_config = {
             "base_model": base_model,
             "channel_type": channel_type,
             "lora_models": lora_models,
             "lora_paths": lora_paths,
-            "output_path": str(output_dir)
+            "output_path": str(output_dir),
+            "input_path": input_path,
+            "script_data": script_data
         }
         
         logger.info(f"Executing multi-language pipeline for languages: {', '.join(selected_languages)}")

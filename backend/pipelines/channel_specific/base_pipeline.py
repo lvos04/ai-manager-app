@@ -1057,7 +1057,18 @@ class BasePipeline:
             locations = script_data.get('locations', [])
             
             for i, scene in enumerate(scenes):
-                scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+                if isinstance(scene, dict):
+                    scene_text = scene.get('description', f'Scene {i+1}')
+                    character = scene.get('character', '')
+                    dialogue = scene.get('dialogue', '')
+                    location = scene.get('location', '')
+                    
+                    if character and dialogue:
+                        scene_text = f"{scene_text}. Character {character} says: '{dialogue}'"
+                    if location:
+                        scene_text = f"{scene_text}. Location: {location}"
+                else:
+                    scene_text = scene if isinstance(scene, str) else f'Scene {i+1}'
                 
                 analysis_prompt = f"""
 Analyze this {channel_type} scene and create detailed prompts for AI generation models.
@@ -2065,6 +2076,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             import asyncio
             
             input_path = project_data.get('input_path', '')
+            script_data = project_data.get('script_data', {})
             output_path = project_data.get('output_path', '/tmp/pipeline_output')
             base_model = project_data.get('base_model', 'stable_diffusion_1_5')
             lora_models = project_data.get('lora_models', [])
@@ -2077,8 +2089,9 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,
-                self.run,
+                self.run_with_script_data,
                 input_path,
+                script_data,
                 output_path,
                 base_model,
                 lora_models,
@@ -2090,6 +2103,104 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 frame_interpolation_enabled,
                 language
             )
+
+    def run_with_script_data(self, input_path: str, script_data: Dict, output_path: str, 
+                           base_model: str = "stable_diffusion_1_5", 
+                           lora_models: Optional[List[str]] = None, 
+                           lora_paths: Optional[Dict[str, str]] = None, 
+                           db_run=None, db=None, render_fps: int = 24, 
+                           output_fps: int = 24, frame_interpolation_enabled: bool = True, 
+                           language: str = "en") -> str:
+        """Run pipeline with pre-parsed script data to avoid re-parsing."""
+        try:
+            logger.info(f"Starting {self.channel_type} pipeline with script data")
+            
+            if script_data and script_data.get('scenes'):
+                expanded_script = self.expand_script_if_needed(script_data)
+            else:
+                parsed_script = self.parse_input_script(input_path) if input_path else {}
+                expanded_script = self.expand_script_if_needed(parsed_script)
+            
+            self._save_llm_expansion_results(expanded_script, output_path)
+            
+            output_dir = self.ensure_output_dir(output_path)
+            
+            scene_videos = []
+            scenes = expanded_script.get('scenes', self._get_default_scenes())
+            characters = expanded_script.get('characters', [])
+            locations = expanded_script.get('locations', [])
+            
+            logger.info(f"Processing {len(scenes)} scenes with {len(characters)} characters")
+            
+            for i, scene in enumerate(scenes):
+                scene_description = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
+                
+                if isinstance(scene, dict):
+                    character = scene.get('character', '')
+                    dialogue = scene.get('dialogue', '')
+                    location = scene.get('location', '')
+                    
+                    if character and dialogue:
+                        scene_description = f"Character {character} says: '{dialogue}' in location: {location}"
+                
+                enhanced_prompt = self._enhance_prompt_for_channel(scene_description)
+                
+                scene_output = output_dir / f"scene_{i+1}.mp4"
+                video_path = self.generate_video(enhanced_prompt, output_path=str(scene_output), duration=5.0)
+                
+                if video_path and os.path.exists(video_path):
+                    scene_videos.append(video_path)
+                    logger.info(f"Generated scene {i+1}: {video_path}")
+            
+            final_video = output_dir / "final_video.mp4"
+            if scene_videos:
+                self._combine_scene_videos(scene_videos, str(final_video))
+            else:
+                self._create_fallback_video("Default content", 300.0, str(final_video))
+            
+            self.create_manifest(output_dir, 
+                               scenes_generated=len(scene_videos),
+                               final_video=str(final_video),
+                               language=language)
+            
+            logger.info(f"{self.channel_type} pipeline completed: {final_video}")
+            return str(output_dir)
+            
+        except Exception as e:
+            logger.error(f"Pipeline execution failed: {e}")
+            output_dir = self.ensure_output_dir(output_path)
+            fallback_video = output_dir / "fallback_video.mp4"
+            self._create_fallback_video("Pipeline failed", 300.0, str(fallback_video))
+            return str(output_dir)
+
+    def _save_llm_expansion_results(self, expanded_script: Dict, output_path: str):
+        """Save LLM expansion results to output directory for debugging."""
+        try:
+            import json
+            from pathlib import Path
+            
+            output_dir = Path(output_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            llm_output_file = output_dir / "llm_expansion.json"
+            with open(llm_output_file, 'w', encoding='utf-8') as f:
+                json.dump(expanded_script, f, indent=2, ensure_ascii=False)
+            
+            scenes_file = output_dir / "processed_scenes.json"
+            scenes_data = {
+                "total_scenes": len(expanded_script.get('scenes', [])),
+                "characters": expanded_script.get('characters', []),
+                "locations": expanded_script.get('locations', []),
+                "scenes": expanded_script.get('scenes', [])
+            }
+            with open(scenes_file, 'w', encoding='utf-8') as f:
+                json.dump(scenes_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"LLM expansion results saved to {llm_output_file}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save LLM expansion results: {e}")
+
             
             return {
                 "success": True,

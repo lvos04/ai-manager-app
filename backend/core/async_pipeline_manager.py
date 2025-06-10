@@ -157,6 +157,10 @@ class AsyncPipelineManager:
                 scenes = scenes_or_project_data
                 project_data = pipeline_config.copy()
                 project_data['scenes'] = scenes
+                if 'input_path' not in project_data:
+                    project_data['input_path'] = pipeline_config.get('input_path', '')
+                if 'script_data' not in project_data:
+                    project_data['script_data'] = pipeline_config.get('script_data', {})
             else:
                 project_data = scenes_or_project_data
                 scenes = project_data.get('scenes', [])
