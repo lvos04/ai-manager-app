@@ -448,14 +448,17 @@ async def extract_scenes_from_pipeline(pipeline_module, input_path: str, channel
             scene_detail = {
                 "description": scene,
                 "dialogue": f"Scene {i+1} dialogue",
-                "duration": "10.0",
+                "duration": 10.0,
                 "scene_id": str(i)
             }
         else:
             scene_detail = scene.copy() if isinstance(scene, dict) else {"description": str(scene)}
             scene_detail["scene_id"] = str(i)
             if "duration" not in scene_detail:
-                scene_detail["duration"] = "10.0"
+                scene_detail["duration"] = 10.0
+            else:
+                from .utils.duration_parser import parse_duration
+                scene_detail["duration"] = parse_duration(scene_detail["duration"], 10.0)
         scene_details.append(scene_detail)
     
     logger.info(f"Prepared {len(scene_details)} scenes for pipeline execution")

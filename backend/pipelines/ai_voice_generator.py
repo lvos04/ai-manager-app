@@ -407,7 +407,7 @@ class AIVoiceGenerator:
                 if os.path.exists(audio_file):
                     audio = AudioSegment.from_wav(audio_file)
                     combined += audio
-                    combined += AudioSegment.silent(duration=300)
+                    combined += AudioSegment.silent(duration=300)  # 300ms silence between segments
             
             combined.export(output_path, format="wav")
             

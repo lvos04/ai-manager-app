@@ -1616,13 +1616,25 @@ def download_from_huggingface(model_name: str, model_type: str, model_dir: Path,
             
             logger.info(f"Downloading {model_name} from {repo_id}, file: {filename} (attempt {attempt + 1}/{max_retries})")
             
-            downloaded_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-                local_dir=str(model_dir),
-                local_dir_use_symlinks=False,
-                timeout=timeout
-            )
+            try:
+                downloaded_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=filename,
+                    local_dir=str(model_dir),
+                    local_dir_use_symlinks=False,
+                    timeout=timeout
+                )
+            except TypeError as e:
+                if "timeout" in str(e):
+                    logger.warning(f"HuggingFace hub version doesn't support timeout parameter, retrying without timeout")
+                    downloaded_path = hf_hub_download(
+                        repo_id=repo_id,
+                        filename=filename,
+                        local_dir=str(model_dir),
+                        local_dir_use_symlinks=False
+                    )
+                else:
+                    raise
             
             db_model.downloaded = True
             db_model.download_path = str(model_dir)

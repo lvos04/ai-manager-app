@@ -750,6 +750,13 @@ class BasePipeline:
                             return None
                     except Exception as e:
                         logger.error(f"Bark loading failed on attempt {retry_count + 1}: {e}")
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                                torch.cuda.synchronize()
+                        except:
+                            pass
                         retry_count += 1
                         if retry_count >= max_retries:
                             logger.error("Failed to load Bark after all retries, using fallback")
@@ -1433,6 +1440,10 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            
+            if not out.isOpened():
+                logger.error(f"Failed to open video writer for {output_path}")
+                return output_path
             
             for i in range(frames):
                 t = i / fps
