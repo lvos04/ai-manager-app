@@ -111,8 +111,48 @@ class BasePipeline:
         ]
     
     def _enhance_prompt_for_channel(self, prompt: str) -> str:
-        """Enhance prompt for specific channel style."""
-        return f"{self.channel_type} style: {prompt}"
+        """Enhance prompt for specific channel style with detailed enhancements."""
+        channel_enhancements = {
+            "anime": {
+                "prefix": "anime style, high quality animation, detailed character design",
+                "style_tags": "cel shading, vibrant colors, expressive eyes, dynamic poses",
+                "quality": "masterpiece, best quality, ultra detailed, 8k resolution"
+            },
+            "gaming": {
+                "prefix": "gaming content, action-packed, dynamic gameplay",
+                "style_tags": "realistic graphics, intense action, competitive gaming",
+                "quality": "high resolution, smooth animation, professional gaming"
+            },
+            "superhero": {
+                "prefix": "superhero style, heroic poses, dramatic lighting",
+                "style_tags": "comic book style, powerful characters, epic scenes",
+                "quality": "cinematic quality, dramatic composition, heroic atmosphere"
+            },
+            "manga": {
+                "prefix": "manga style, black and white, detailed line art",
+                "style_tags": "manga panels, expressive characters, detailed backgrounds",
+                "quality": "high contrast, detailed illustration, professional manga"
+            },
+            "marvel_dc": {
+                "prefix": "Marvel/DC comic style, superhero universe",
+                "style_tags": "comic book art, iconic characters, action scenes",
+                "quality": "comic book quality, detailed artwork, iconic style"
+            },
+            "original_manga": {
+                "prefix": "original manga style, unique character design",
+                "style_tags": "creative storytelling, original characters, manga aesthetics",
+                "quality": "artistic quality, creative composition, original style"
+            }
+        }
+        
+        enhancement = channel_enhancements.get(self.channel_type, {
+            "prefix": f"{self.channel_type} style",
+            "style_tags": "high quality, detailed",
+            "quality": "professional quality"
+        })
+        
+        enhanced_prompt = f"{enhancement['prefix']}, {prompt}, {enhancement['style_tags']}, {enhancement['quality']}"
+        return enhanced_prompt
     def _classify_scene_type(self, prompt: str) -> str:
         """Classify scene type for optimal model selection."""
         prompt_lower = prompt.lower()
@@ -272,8 +312,8 @@ class BasePipeline:
         except:
             return "medium"
     
-    def load_llm_model(self):
-        """Load LLM model for script expansion and content generation."""
+    def load_llm_model(self, model_name: str = "deepseek_llama_8b_peft"):
+        """Load LLM model with Deepseek support."""
         if "llm" in self.models:
             return self.models["llm"]
         
@@ -281,64 +321,103 @@ class BasePipeline:
             from transformers import AutoModelForCausalLM, AutoTokenizer
             import torch
             
-            logger.info(f"Loading LLM model with {self.vram_tier} VRAM optimizations")
+            try:
+                from ..model_manager import TEXT_MODELS, HF_MODEL_REPOS
+                model_info = TEXT_MODELS.get(model_name)
+                if not model_info:
+                    logger.warning(f"Model {model_name} not found, using fallback")
+                    model_name = "dialogpt_medium"
+                    model_info = TEXT_MODELS.get(model_name)
+                
+                model_id = model_info.get("model_id", "microsoft/DialoGPT-medium")
+            except ImportError:
+                logger.warning("Model manager not available, using default models")
+                model_mapping = {
+                    "deepseek_llama_8b_peft": "deepseek-ai/deepseek-llm-7b-chat",
+                    "dialogpt_medium": "microsoft/DialoGPT-medium",
+                    "gpt2": "gpt2",
+                    "distilgpt2": "distilgpt2"
+                }
+                model_id = model_mapping.get(model_name, "microsoft/DialoGPT-medium")
             
-            model_options = [
-                "gpt2-medium", 
-                "gpt2",
-                "distilgpt2"
-            ]
+            logger.info(f"Loading LLM model: {model_id}")
             
-            for model_id in model_options:
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            
+            vram_tier = self._detect_vram_tier()
+            
+            if vram_tier in ["high", "ultra"] and torch.cuda.is_available():
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float16,
+                    device_map="auto",
+                    trust_remote_code=True
+                )
+            elif vram_tier == "medium" and torch.cuda.is_available():
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float16,
+                    device_map="cuda",
+                    trust_remote_code=True
+                )
+            else:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float32,
+                    device_map="cpu",
+                    trust_remote_code=True
+                )
+            
+            def generate_text(prompt: str, max_tokens: int = 100) -> str:
                 try:
-                    logger.info(f"Attempting to load LLM model: {model_id}")
-            
-                    tokenizer = AutoTokenizer.from_pretrained(model_id)
-                    model = AutoModelForCausalLM.from_pretrained(
-                        model_id,
-                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                        low_cpu_mem_usage=True,
-                        device_map="auto" if self.vram_tier == "low" else None
-                    )
+                    inputs = tokenizer.encode(prompt, return_tensors="pt", truncation=True, max_length=512)
+                    if torch.cuda.is_available() and hasattr(model, 'device') and model.device.type == "cuda":
+                        inputs = inputs.to("cuda")
                     
-                    if torch.cuda.is_available() and self.vram_tier != "low":
-                        model = model.to(self.device)
+                    with torch.no_grad():
+                        outputs = model.generate(
+                            inputs,
+                            max_new_tokens=max_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_p=0.9,
+                            pad_token_id=tokenizer.eos_token_id
+                        )
                     
-                    self.models["llm"] = {
-                        "model": model,
-                        "tokenizer": tokenizer,
-                        "generate": lambda prompt, max_tokens=100: self._generate_with_llm(model, tokenizer, prompt, max_tokens)
-                    }
-                    logger.info(f"LLM model {model_id} loaded successfully")
-                    return self.models["llm"]
+                    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    if generated_text.startswith(prompt):
+                        generated_text = generated_text[len(prompt):].strip()
                     
-                except Exception as model_error:
-                    logger.warning(f"Failed to load {model_id}: {model_error}")
-                    continue
+                    return generated_text
+                    
+                except Exception as e:
+                    logger.error(f"Error in text generation: {e}")
+                    return f"Enhanced {prompt} with detailed character interactions and dynamic scenes"
             
-            logger.warning("All LLM models failed, using simple fallback")
-            def fallback_generate(prompt, max_tokens=100):
-                import random
-                # Simple template-based generation
-                if "title" in prompt.lower():
-                    return f"Epic {getattr(self, 'channel_type', 'content').title()} Adventure - Episode {random.randint(1, 100)}"
-                elif "description" in prompt.lower():
-                    return f"An amazing {getattr(self, 'channel_type', 'content')} story with incredible action and adventure!"
-                elif "next episode" in prompt.lower():
-                    return "1. The adventure continues\n2. New challenges await\n3. Epic conclusion"
-                else:
-                    return "Generated content for your project"
+            self.models["llm"] = {
+                "model": model,
+                "tokenizer": tokenizer,
+                "generate": generate_text,
+                "device": model.device.type if hasattr(model, 'device') else "cpu"
+            }
             
-            self.models["llm"] = {"generate": fallback_generate}
+            logger.info(f"LLM model {model_id} loaded successfully")
             return self.models["llm"]
             
         except Exception as e:
-            logger.error(f"Failed to load any LLM model: {e}")
-            import random
-            def emergency_generate(prompt, max_tokens=100):
-                return f"Generated {getattr(self, 'channel_type', 'content')} content"
+            logger.error(f"Failed to load LLM model {model_name}: {e}")
             
-            return {"generate": emergency_generate}
+            def fallback_generate(prompt: str, max_tokens: int = 100) -> str:
+                return f"Enhanced {prompt} with detailed character interactions and dynamic action sequences"
+            
+            def emergency_generate(prompt: str, max_tokens: int = 100) -> str:
+                return f"Expanded scene: {prompt}"
+            
+            self.models["llm"] = {"generate": fallback_generate, "fallback": emergency_generate}
+            return self.models["llm"]
     
     def _generate_fallback_music(self, descriptions: List[str] = None, duration: float = 30.0, prompt: str = None) -> str:
         """Generate fallback background music when audiocraft is not available."""
@@ -1966,3 +2045,50 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             }
 
         return str(output_dir / "manifest.json")
+
+
+
+    async def execute_async(self, project_data: Dict) -> Dict[str, Any]:
+        """Execute pipeline asynchronously with proper error handling."""
+        try:
+            import asyncio
+            
+            input_path = project_data.get('input_path', '')
+            output_path = project_data.get('output_path', '/tmp/pipeline_output')
+            base_model = project_data.get('base_model', 'stable_diffusion_1_5')
+            lora_models = project_data.get('lora_models', [])
+            lora_paths = project_data.get('lora_paths', {})
+            language = project_data.get('language', 'en')
+            render_fps = project_data.get('render_fps', 24)
+            output_fps = project_data.get('output_fps', 24)
+            frame_interpolation_enabled = project_data.get('frame_interpolation_enabled', True)
+            
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                self.run,
+                input_path,
+                output_path,
+                base_model,
+                lora_models,
+                lora_paths,
+                None,
+                None,
+                render_fps,
+                output_fps,
+                frame_interpolation_enabled,
+                language
+            )
+            
+            return {
+                "success": True,
+                "output_path": result,
+                "message": f"Pipeline completed successfully for {self.channel_type}"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Pipeline failed for {self.channel_type}: {str(e)}"
+            }
