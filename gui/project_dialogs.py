@@ -810,7 +810,7 @@ class NewProjectDialog(QDialog):
                             "compatibility": model.get("channel_compatibility", [])
                         })
                         
-                        if model.get("downloaded", False):
+                        if True:
                             channel_compatibility = model.get("channel_compatibility", [])
                             if isinstance(channel_compatibility, str):
                                 channel_compatibility = [c.strip() for c in channel_compatibility.split(",") if c.strip()]

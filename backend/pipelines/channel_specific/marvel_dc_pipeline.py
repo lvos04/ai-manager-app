@@ -665,8 +665,23 @@ class MarvelDCChannelPipeline(BasePipeline):
             logger.error(f"Error in scene video generation: {e}")
             return self._create_fallback_video(scene_description, duration, output_path)
     
-    def _optimize_video_prompt(self, prompt: str, channel_type: str) -> str:
+    def _optimize_video_prompt(self, prompt: str, channel_type: str = "marvel_dc", model_name: str = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
+        from backend.model_manager import BASE_MODEL_PROMPT_TEMPLATES
+        
+        if model_name and model_name in BASE_MODEL_PROMPT_TEMPLATES:
+            template = BASE_MODEL_PROMPT_TEMPLATES[model_name]
+            
+            if "structure" in template and model_name in ["anything_xl", "aam_xl_animemix"]:
+                quality = "masterpiece, best quality"
+                year = "newest"
+                optimized_prompt = f"{quality}, {year}, comic book style, superhero art, {prompt}"
+            else:
+                optimized_prompt = f"{template['prefix']}, comic book style, superhero art, {prompt}"
+            
+            suffix = ", 16:9 aspect ratio, smooth motion, professional cinematography, ultra high definition"
+            return f"{optimized_prompt}{suffix}"
+        
         optimizations = {
             "marvel_dc": "masterpiece, best quality, ultra detailed, 8k resolution, cinematic lighting, smooth animation, professional comic book style, Marvel/DC inspired, superhero art, vibrant colors, dynamic composition, "
         }
