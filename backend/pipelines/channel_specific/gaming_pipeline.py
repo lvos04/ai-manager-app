@@ -662,6 +662,8 @@ class GamingChannelPipeline(BasePipeline):
             
         except Exception as e:
             logger.error(f"Error logging gaming content failure: {e}")
+            final_dir = output_dir / "final"
+            final_dir.mkdir(exist_ok=True)
             
             from ..text_to_video_generator import TextToVideoGenerator
             video_generator = TextToVideoGenerator()
