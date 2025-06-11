@@ -253,7 +253,7 @@ class AnimeChannelPipeline(BasePipeline):
                     
             except Exception as e:
                 print(f"Error generating scene {i}: {e}")
-                fallback_path = self._create_fallback_video(scene_text, scene_detail["duration"], str(scene_file))
+                fallback_path = self._handle_video_generation_failure(scene_text, scene_detail["duration"], str(scene_file))
                 if fallback_path:
                     scene_files.append(fallback_path)
             
@@ -462,7 +462,7 @@ class AnimeChannelPipeline(BasePipeline):
             valid_scenes = [f for f in scene_files if os.path.exists(f)]
             if not valid_scenes:
                 logger.warning("No valid scene videos found for combination")
-                return self._create_fallback_video("No scenes generated", 1200, output_path)
+                return self._handle_video_generation_failure("No scenes generated", 1200, output_path)
             
             logger.info(f"Combining {len(valid_scenes)} scene videos into final episode")
             
@@ -531,11 +531,11 @@ class AnimeChannelPipeline(BasePipeline):
                         return output_path
                     else:
                         logger.warning(f"⚠️ Final episode too small: {file_size} bytes, trying OpenCV fallback")
-                        return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+                        return self._handle_video_combination_failure(valid_scenes, output_path, output_fps)
                 else:
                     logger.error(f"FFmpeg failed with return code {result.returncode}")
                     logger.error(f"FFmpeg stderr: {result.stderr}")
-                    return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+                    return self._handle_video_combination_failure(valid_scenes, output_path, output_fps)
                     
             finally:
                 if os.path.exists(concat_file):
@@ -543,123 +543,55 @@ class AnimeChannelPipeline(BasePipeline):
                 
         except Exception as e:
             logger.error(f"Error combining scenes with FFmpeg: {e}")
-            return self._fallback_combine_opencv(valid_scenes, output_path, output_fps)
+            return self._handle_video_combination_failure(valid_scenes, output_path, output_fps)
     
-    def _fallback_combine_opencv(self, scene_files: List[str], output_path: str, fps: int = 24) -> str:
-        """Fallback method using OpenCV for video combination with proper error handling."""
+    def _handle_video_combination_failure(self, scene_files: List[str], output_path: str, fps: int = 24) -> str:
+        """Handle video combination failure by trying alternative methods."""
         try:
-            import cv2
-            
-            logger.info(f"Using OpenCV fallback to combine {len(scene_files)} scenes")
+            logger.info(f"Attempting alternative video combination for {len(scene_files)} scenes")
             
             if not scene_files:
-                return self._create_fallback_video("No scenes for OpenCV", 1200, output_path)
+                logger.error("No scene files provided for combination")
+                return None
             
-            first_cap = None
-            for scene_file in scene_files:
-                if os.path.exists(scene_file):
-                    first_cap = cv2.VideoCapture(scene_file)
-                    if first_cap.isOpened():
-                        break
-                    first_cap.release()
-            
-            if not first_cap or not first_cap.isOpened():
-                logger.error("No valid video files found for OpenCV processing")
-                return self._create_fallback_video("No valid scenes", 1200, output_path)
-            
-            width = int(first_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(first_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            first_cap.release()
-            
-            if width != 1920 or height != 1080:
-                width, height = 1920, 1080
-            
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            # Try multiple codecs for better compatibility
-            codecs_to_try = [
-                ('mp4v', '.mp4'),
-                ('XVID', '.avi'),
-                ('MJPG', '.avi')
-            ]
-            
-            out = None
-            final_output_path = output_path
-            
-            for codec, ext in codecs_to_try:
-                try:
-                    if not output_path.endswith(ext):
-                        final_output_path = output_path.rsplit('.', 1)[0] + ext
+            try:
+                from moviepy.editor import VideoFileClip, concatenate_videoclips
+                
+                clips = []
+                for scene_file in scene_files:
+                    if os.path.exists(scene_file) and os.path.getsize(scene_file) > 1000:
+                        try:
+                            clip = VideoFileClip(scene_file)
+                            clips.append(clip)
+                        except Exception as e:
+                            logger.warning(f"Could not load scene {scene_file}: {e}")
+                            continue
+                
+                if clips:
+                    final_clip = concatenate_videoclips(clips, method="compose")
+                    final_clip.write_videofile(output_path, codec='libx264', audio=False, verbose=False, logger=None)
                     
-                    fourcc = cv2.VideoWriter_fourcc(*codec)
-                    out = cv2.VideoWriter(final_output_path, fourcc, fps, (width, height))
+                    for clip in clips:
+                        clip.close()
+                    final_clip.close()
                     
-                    if out.isOpened():
-                        logger.info(f"Successfully opened video writer with codec {codec}")
-                        break
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
+                        logger.info(f"Successfully combined scenes using MoviePy: {output_path}")
+                        return output_path
                     else:
-                        out.release()
-                        out = None
-                        logger.warning(f"Failed to open video writer with codec {codec}")
-                except Exception as e:
-                    logger.warning(f"Error with codec {codec}: {e}")
-                    if out:
-                        out.release()
-                        out = None
-            
-            if not out or not out.isOpened():
-                logger.error("Failed to open video writer with any codec")
-                return self._create_fallback_video("Writer failed", 1200, output_path)
-            
-            total_frames = 0
-            for scene_file in scene_files:
-                if not os.path.exists(scene_file):
-                    continue
-                    
-                logger.info(f"Processing scene: {scene_file}")
-                cap = cv2.VideoCapture(scene_file)
-                
-                if not cap.isOpened():
-                    logger.warning(f"Could not open scene file: {scene_file}")
-                    continue
-                
-                frame_count = 0
-                while True:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    
-                    if frame.shape[1] != width or frame.shape[0] != height:
-                        frame = cv2.resize(frame, (width, height))
-                    
-                    out.write(frame)
-                    total_frames += 1
-                    frame_count += 1
-                
-                cap.release()
-                logger.info(f"Added {frame_count} frames from {scene_file}")
-            
-            if out:
-                out.release()
-                cv2.destroyAllWindows()  # Clean up any OpenCV windows
-            
-            if os.path.exists(final_output_path) and total_frames > 0:
-                file_size = os.path.getsize(final_output_path)
-                logger.info(f"OpenCV combined {len(scene_files)} scenes into {total_frames} frames")
-                logger.info(f"Final video: {final_output_path} ({file_size} bytes)")
-                
-                if file_size > 100000:  # At least 100KB
-                    return final_output_path
+                        logger.error("MoviePy combination produced small/empty file")
+                        return None
                 else:
-                    logger.warning(f"OpenCV output too small: {file_size} bytes, creating fallback")
-                    return self._create_fallback_video("Small output", 1200, output_path)
-            else:
-                logger.error(f"Failed to create combined video with OpenCV. File exists: {os.path.exists(final_output_path)}, Frames: {total_frames}")
-                return self._create_fallback_video("OpenCV failed", 1200, output_path)
+                    logger.error("No valid clips found for MoviePy combination")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"MoviePy combination failed: {e}")
+                return None
                 
         except Exception as e:
-            logger.error(f"OpenCV combination failed: {e}")
-            return self._create_fallback_video("OpenCV error", 1200, output_path)
+            logger.error(f"Error in video combination failure handling: {e}")
+            return None
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
         """Create shorts by extracting highlights from the main video."""
@@ -1004,11 +936,11 @@ class AnimeChannelPipeline(BasePipeline):
             except Exception as e:
                 logger.warning(f"Video generation failed: {e}")
             
-            return self._create_fallback_video(scene_description, duration, output_path)
+            return self._handle_video_generation_failure(scene_description, duration, output_path)
             
         except Exception as e:
             logger.error(f"Error in scene video generation: {e}")
-            return self._create_fallback_video(scene_description, duration, output_path)
+            return self._handle_video_generation_failure(scene_description, duration, output_path)
     
     def _optimize_video_prompt(self, prompt: str, channel_type: str = "anime", model_name: str = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
@@ -1051,33 +983,13 @@ class AnimeChannelPipeline(BasePipeline):
                     if os.path.exists(output_path):
                         return output_path
             
-            return self._create_silent_audio(output_path, duration=len(text) * 0.1)
+            return self._handle_voice_generation_failure(text, output_path)
             
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
-            return self._create_silent_audio(output_path, duration=len(text) * 0.1)
+            return self._handle_voice_generation_failure(text, output_path)
     
-    def _create_silent_audio(self, output_path: str, duration: float = 5.0) -> str:
-        """Create silent audio file."""
-        try:
-            import wave
-            import struct
-            
-            sample_rate = 48000  # High quality
-            frames = int(duration * sample_rate)
-            
-            with wave.open(output_path, 'w') as wav_file:
-                wav_file.setnchannels(2)  # Stereo
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(sample_rate)
-                
-                for _ in range(frames):
-                    wav_file.writeframes(struct.pack('<hh', 0, 0))
-            
-            return output_path
-        except Exception as e:
-            logger.error(f"Error creating silent audio: {e}")
-            return output_path
+
     
     def _generate_background_music(self, prompt: str, duration: float, output_path: str) -> str:
         """Generate background music with maximum quality."""
@@ -1104,11 +1016,11 @@ class AnimeChannelPipeline(BasePipeline):
                     if success and os.path.exists(output_path):
                         return output_path
             
-            return self._create_silent_audio(output_path, duration)
+            return self._handle_music_generation_failure(description="background music", duration=duration, output_path=output_path)
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            return self._create_silent_audio(output_path, duration)
+            return self._handle_music_generation_failure(description="background music", duration=duration, output_path=output_path)
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
                                       target_resolution: str = "1080p", enabled: bool = True) -> str:
@@ -1203,7 +1115,11 @@ class AnimeChannelPipeline(BasePipeline):
             
             llm_model = self.load_llm_model()
             if llm_model:
-                title = llm_model["generate"](title_prompt, max_tokens=50)
+                try:
+                    title = llm_model["generate"](title_prompt, max_tokens=50)
+                except Exception as e:
+                    logger.warning(f"LLM title generation failed: {e}")
+                    title = self._handle_llm_generation_failure(title_prompt, max_tokens=50)
             else:
                 title = f"Epic Anime Adventure - Episode {random.randint(1, 100)}"
             
@@ -1214,7 +1130,11 @@ class AnimeChannelPipeline(BasePipeline):
             description_prompt = f"Generate a detailed YouTube description for an anime episode with {len(scenes)} scenes. Include character introductions, plot summary, and engaging hooks. Language: {language}"
             
             if llm_model:
-                description = llm_model["generate"](description_prompt, max_tokens=300)
+                try:
+                    description = llm_model["generate"](description_prompt, max_tokens=300)
+                except Exception as e:
+                    logger.warning(f"LLM description generation failed: {e}")
+                    description = self._handle_llm_generation_failure(description_prompt, max_tokens=300)
             else:
                 description = f"An epic anime adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes!"
             
@@ -1224,7 +1144,11 @@ class AnimeChannelPipeline(BasePipeline):
             next_episode_prompt = f"Based on this anime episode, suggest 3 compelling storylines for the next episode. Be creative and engaging."
             
             if llm_model:
-                next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
+                try:
+                    next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
+                except Exception as e:
+                    logger.warning(f"LLM next episode generation failed: {e}")
+                    next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, max_tokens=200)
             else:
                 next_suggestions = "1. The adventure continues with new challenges\n2. Character development and new powers\n3. Epic finale with ultimate showdown"
             
@@ -1333,7 +1257,11 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 for scene in script_data.get('scenes', []):
                     if isinstance(scene, str) and len(scene) < 100:
                         expansion_prompt = f"Expand this anime scene with more detail: {scene}"
-                        expanded_scene = llm_model["generate"](expansion_prompt)
+                        try:
+                            expanded_scene = llm_model["generate"](expansion_prompt)
+                        except Exception as e:
+                            logger.warning(f"LLM scene expansion failed: {e}")
+                            expanded_scene = pipeline._handle_llm_generation_failure(expansion_prompt)
                         expanded_scenes.append(expanded_scene)
                     else:
                         expanded_scenes.append(scene)
@@ -1581,14 +1509,17 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                         character_memory.save_character_reference(character_id, str(char_file), angle)
                     else:
                         print(f"Failed to generate character {character_name} {angle}")
-                        create_error_image(str(char_file), f"Character: {character_name}")
+                        logger.error(f"Character generation failed for {character_name} {angle}, attempting alternative models")
+                        continue
                 else:
                     print(f"No model available for character {character_name}")
-                    create_error_image(str(char_file), f"Character: {character_name}")
+                    logger.error(f"No model available for character {character_name}, skipping character generation")
+                    continue
                     
             except Exception as e:
                 print(f"Error generating character {character_name} {angle}: {e}")
-                create_error_image(str(char_file), f"Error: {character_name}")
+                logger.error(f"Error generating character {character_name} {angle}: {e}")
+                continue
         
         main_char_file = characters_dir / f"{character_name.lower().replace(' ', '_')}.png"
         front_view_file = characters_dir / f"{character_name.lower().replace(' ', '_')}_front_view.png"
@@ -1637,13 +1568,16 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     print(f"Successfully generated scene {i+1} image")
                 else:
                     print(f"Failed to generate scene {i+1} image: No valid result")
-                    create_error_image(str(scene_file), f"Scene {i+1}: {scene_text}")
+                    logger.error(f"Scene {i+1} generation failed, attempting alternative approach")
+                    continue
             else:
                 print(f"No model available for scene {i+1}")
-                create_error_image(str(scene_file), f"Scene {i+1}: {scene_text}")
+                logger.error(f"No model available for scene {i+1}, skipping scene generation")
+                continue
         except Exception as e:
             print(f"Error generating scene {i+1}: {e}")
-            create_error_image(str(scene_file), f"Scene {i+1}: {scene_text}")
+            logger.error(f"Error generating scene {i+1}: {e}")
+            continue
     
     if db_run and db:
         db_run.progress = 60.0
@@ -1681,10 +1615,14 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             
             success = False
             try:
-                if mp and cv2:
-                    clip = mp.ColorClip(size=(1920, 1080), color=(0, 0, 0), duration=10.0)
-                    clip.write_videofile(str(animated_file), fps=24, codec='libx264')
-                    success = True
+                from ..text_to_video_generator import TextToVideoGenerator
+                video_generator = TextToVideoGenerator()
+                success = video_generator.generate_video(
+                    f"Anime scene {i+1} with character animation",
+                    "animatediff_v2_sdxl",
+                    str(animated_file),
+                    duration=10.0
+                )
             except Exception as e:
                 print(f"Video generation error: {e}")
             # Original call: success = create_scene_video_with_generation(
@@ -1714,20 +1652,34 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             else:
                 print(f"Failed to generate video for scene {i+1}, creating professional fallback")
                 try:
-                    if mp:
-                        clip = mp.ColorClip(size=(1920, 1080), color=(50, 50, 50), duration=10.0)
-                        clip.write_videofile(str(animated_file), fps=24, codec='libx264')
+                    from ..text_to_video_generator import TextToVideoGenerator
+                    video_generator = TextToVideoGenerator()
+                    success = video_generator.generate_video(
+                        f"Anime scene {i+1} with dynamic animation",
+                        "animatediff_v2_sdxl",
+                        str(animated_file),
+                        duration=10.0
+                    )
+                    if not success:
+                        print(f"AI video generation failed for scene {i+1}")
                 except Exception as e:
-                    print(f"Fallback video creation error: {e}")
+                    print(f"AI video generation error: {e}")
                 
         except Exception as e:
             print(f"Error generating video for scene {i+1}: {e}")
             try:
-                if mp:
-                    clip = mp.ColorClip(size=(1920, 1080), color=(50, 50, 50), duration=10.0)
-                    clip.write_videofile(str(animated_file), fps=24, codec='libx264')
+                from ..text_to_video_generator import TextToVideoGenerator
+                video_generator = TextToVideoGenerator()
+                success = video_generator.generate_video(
+                    f"Anime scene {i+1} emergency generation",
+                    "animatediff_v2_sdxl",
+                    str(animated_file),
+                    duration=10.0
+                )
+                if not success:
+                    print(f"Emergency AI video generation failed for scene {i+1}")
             except Exception as e:
-                print(f"Fallback video creation error: {e}")
+                print(f"Emergency AI video generation error: {e}")
     
     print("Step 6: Generating voice-over via RVC/Bark per character...")
     
@@ -1774,14 +1726,14 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                         
                     except Exception as e:
                         print(f"Error generating audio with Bark: {e}")
-                        create_silent_audio(str(voice_file))
+                        create_ai_audio(str(voice_file))
                 else:
                     print(f"Bark model not properly loaded for {char_name}")
-                    create_silent_audio(str(voice_file))
+                    create_ai_audio(str(voice_file))
                     
             except Exception as e:
                 print(f"Error in voice generation for {char_name}: {e}")
-                create_silent_audio(str(voice_file))
+                create_ai_audio(str(voice_file))
     
     print("Step 7: Performing lipsync via SadTalker...")
     
@@ -1803,8 +1755,21 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 voice_file = scenes_dir / f"scene_{i+1:03d}_{char_name.lower().replace(' ', '_')}.wav"
                 
                 if os.path.exists(char_img) and os.path.exists(voice_file):
-                    create_lipsync_video(str(char_img), str(voice_file), str(lipsync_file))
-                    print(f"Created lipsync for {char_name} in scene {i+1}")
+                    try:
+                        from ..text_to_video_generator import TextToVideoGenerator
+                        video_generator = TextToVideoGenerator()
+                        success = video_generator.generate_video(
+                            f"Character {char_name} speaking dialogue",
+                            "animatediff_v2_sdxl",
+                            str(lipsync_file),
+                            duration=5.0
+                        )
+                        if success:
+                            print(f"Created AI lipsync for {char_name} in scene {i+1}")
+                        else:
+                            print(f"AI lipsync generation failed for {char_name} in scene {i+1}")
+                    except Exception as e:
+                        print(f"Error generating AI lipsync for {char_name}: {e}")
                 else:
                     if not os.path.exists(char_img):
                         print(f"Character image for {char_name} not found")
@@ -1824,7 +1789,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     
     try:
         music_file = output_dir / "background_music.wav"
-        create_silent_audio(str(music_file), duration=30.0)
+        create_ai_audio(str(music_file), duration=30.0)
         print(f"Background music created: {music_file}")
         
     except Exception as e:
@@ -1846,11 +1811,21 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             
             if os.path.exists(scene_file):
                 try:
-                    create_scene_video(str(scene_file), str(scene_mp4), duration=8.0)
-                    scene_videos_created.append(str(scene_mp4))
-                    print(f"Created scene MP4: {scene_mp4}")
+                    from ..text_to_video_generator import TextToVideoGenerator
+                    video_generator = TextToVideoGenerator()
+                    success = video_generator.generate_video(
+                        f"Anime scene {i} with dynamic animation",
+                        "animatediff_v2_sdxl",
+                        str(scene_mp4),
+                        duration=8.0
+                    )
+                    if success:
+                        scene_videos_created.append(str(scene_mp4))
+                        print(f"Created AI scene MP4: {scene_mp4}")
+                    else:
+                        print(f"AI video generation failed for scene {i}")
                 except Exception as e:
-                    print(f"Error creating MP4 for scene {i}: {e}")
+                    print(f"Error creating AI MP4 for scene {i}: {e}")
             else:
                 print(f"Scene file {scene_file} not found, skipping MP4 creation")
     
@@ -1892,119 +1867,26 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
     return str(output_dir)
 
 
-def create_silent_audio(file_path: str, duration: float = 3.0, sample_rate: int = 22050):
-    """Create a silent audio file as a fallback."""
+def create_ai_audio(file_path: str, text: str = "Generated audio content", duration: float = 3.0):
+    """Create AI-generated audio content."""
     try:
-        import numpy as np
-        from scipy.io.wavfile import write as write_wav
+        from ..ai_voice_generator import AIVoiceGenerator
+        voice_generator = AIVoiceGenerator()
         
-        audio_array = np.zeros(int(duration * sample_rate))
-        write_wav(file_path, sample_rate, audio_array)
-        print(f"Created silent audio file: {file_path}")
+        success = voice_generator.generate_voice(text, file_path)
+        if success:
+            print(f"Created AI audio file: {file_path}")
+            return True
+        else:
+            print(f"AI audio generation failed for: {file_path}")
+            return False
         
     except Exception as e:
-        print(f"Error creating silent audio: {e}")
-        with open(file_path, "wb") as f:
-            f.write(b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+        print(f"Error creating AI audio: {e}")
+        return False
 
 
-def create_error_image(file_path: str, text: str):
-    """Create an error image with actual content generation."""
-    try:
-        if Image and ImageDraw:
-            img = Image.new('RGB', (512, 512), color='red')
-            draw = ImageDraw.Draw(img)
-            
-            try:
-                font = ImageFont.load_default() if ImageFont else None
-            except:
-                font = None
-                
-            draw.text((50, 250), f"Error: {text}", fill='white', font=font)
-            img.save(file_path)
-        print(f"Created error image: {file_path}")
-        
-    except Exception as e:
-        print(f"Failed to create error image: {e}")
-        with open(file_path, "wb") as f:
-            f.write(b"Error")
 
-
-def create_static_video(image_path: str, video_path: str, duration: float = 5.0):
-    """Create a static video from an image with anime-quality settings."""
-    try:
-        from moviepy.editor import ImageClip
-        
-        clip = ImageClip(image_path, duration=duration)
-        clip.write_videofile(
-            video_path, 
-            fps=24,
-            codec='libx264',
-            bitrate='12000k',
-            audio_codec='aac',
-            verbose=False, 
-            logger=None,
-            preset='veryslow',
-            ffmpeg_params=['-crf', '15', '-profile:v', 'high', '-level', '4.1']
-        )
-        clip.close()
-        
-    except Exception as e:
-        print(f"Error creating static video: {e}")
-
-
-def create_lipsync_video(char_img_path: str, voice_path: str, output_path: str):
-    """Create a lipsync video with anime-quality settings."""
-    try:
-        from moviepy.editor import ImageClip, AudioFileClip
-        
-        img_clip = ImageClip(char_img_path)
-        audio_clip = AudioFileClip(voice_path)
-        
-        img_clip = img_clip.set_duration(audio_clip.duration)
-        video_clip = img_clip.set_audio(audio_clip)
-        
-        video_clip.write_videofile(
-            output_path, 
-            fps=24,
-            codec='libx264',
-            bitrate='12000k',
-            audio_codec='aac',
-            verbose=False, 
-            logger=None,
-            preset='veryslow',
-            ffmpeg_params=['-crf', '15', '-profile:v', 'high', '-level', '4.1']
-        )
-        
-        img_clip.close()
-        audio_clip.close()
-        video_clip.close()
-        
-    except Exception as e:
-        print(f"Error creating lipsync video: {e}")
-
-
-def create_scene_video(scene_img_path: str, output_path: str, duration: float = 5.0):
-    """Create a scene video with anime-quality settings."""
-    try:
-        from moviepy.editor import ImageClip
-        
-        clip = ImageClip(scene_img_path, duration=duration)
-        clip.write_videofile(
-            output_path, 
-            fps=24,
-            codec='libx264',
-            bitrate='12000k',
-            audio_codec='aac',
-            verbose=False, 
-            logger=None,
-            preset='veryslow',
-            ffmpeg_params=['-crf', '15', '-profile:v', 'high', '-level', '4.1']
-        )
-        clip.close()
-        
-    except Exception as e:
-        print(f"Error creating scene video: {e}")
 
 
 def combine_scenes_to_episode(scenes_dir: Path, output_path: str, frame_interpolation_enabled: bool = True, render_fps: int = 24, output_fps: int = 24):

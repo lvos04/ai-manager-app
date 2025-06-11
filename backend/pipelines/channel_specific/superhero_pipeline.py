@@ -301,7 +301,7 @@ class SuperheroChannelPipeline(BasePipeline):
                 
             except Exception as e:
                 print(f"Error generating superhero scene {i+1}: {e}")
-                fallback_path = self._create_fallback_video(scene_text, 12.0, str(scene_file))
+                fallback_path = self._handle_video_generation_failure(scene_text, 12.0, str(scene_file))
                 if fallback_path:
                     scene_files.append(fallback_path)
             
@@ -697,11 +697,11 @@ class SuperheroChannelPipeline(BasePipeline):
             except Exception as e:
                 logger.warning(f"Video generation failed: {e}")
             
-            return self._create_fallback_video(scene_description, duration, output_path)
+            return self._handle_video_generation_failure(scene_description, duration, output_path)
             
         except Exception as e:
             logger.error(f"Error in scene video generation: {e}")
-            return self._create_fallback_video(scene_description, duration, output_path)
+            return self._handle_video_generation_failure(scene_description, duration, output_path)
     
     def _optimize_video_prompt(self, prompt: str, channel_type: str = "superhero", model_name: str = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
@@ -743,37 +743,17 @@ class SuperheroChannelPipeline(BasePipeline):
                     "output_path": output_path
                 }
                 
-                success = voice_model.generate(**voice_params)
+                success = voice_model["generate"](**voice_params)
                 if success and os.path.exists(output_path):
                     return output_path
             
-            return self._create_silent_audio(output_path, duration=len(text) * 0.1)
+            return self._handle_voice_generation_failure(text, output_path)
             
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
-            return self._create_silent_audio(output_path, duration=len(text) * 0.1)
+            return self._handle_voice_generation_failure(text, output_path)
     
-    def _create_silent_audio(self, output_path: str, duration: float = 5.0) -> str:
-        """Create silent audio file."""
-        try:
-            import wave
-            import struct
-            
-            sample_rate = 48000  # High quality
-            frames = int(duration * sample_rate)
-            
-            with wave.open(output_path, 'w') as wav_file:
-                wav_file.setnchannels(2)  # Stereo
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(sample_rate)
-                
-                for _ in range(frames):
-                    wav_file.writeframes(struct.pack('<hh', 0, 0))
-            
-            return output_path
-        except Exception as e:
-            logger.error(f"Error creating silent audio: {e}")
-            return output_path
+
     
     def _generate_background_music(self, prompt: str, duration: float, output_path: str) -> str:
         """Generate background music with maximum quality."""
@@ -790,15 +770,15 @@ class SuperheroChannelPipeline(BasePipeline):
                     "output_path": output_path
                 }
                 
-                success = music_model.generate(**music_params)
+                success = music_model["generate"](**music_params)
                 if success and os.path.exists(output_path):
                     return output_path
             
-            return self._create_silent_audio(output_path, duration)
+            return self._handle_music_generation_failure("background music", duration, output_path)
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            return self._create_silent_audio(output_path, duration)
+            return self._handle_music_generation_failure("background music", duration, output_path)
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
                                       target_resolution: str = "1080p", enabled: bool = True) -> str:
@@ -890,9 +870,13 @@ class SuperheroChannelPipeline(BasePipeline):
             
             llm_model = self.load_llm_model()
             if llm_model:
-                title = llm_model["generate"](title_prompt, max_tokens=50)
+                try:
+                    title = llm_model["generate"](title_prompt, max_tokens=50)
+                except Exception as e:
+                    logger.warning(f"LLM title generation failed: {e}")
+                    title = self._handle_llm_generation_failure(title_prompt, max_tokens=50)
             else:
-                title = f"Epic Superhero Adventure - Episode {random.randint(1, 100)}"
+                title = self._handle_llm_generation_failure(title_prompt, max_tokens=50)
             
             with open(output_dir / "title.txt", "w", encoding="utf-8") as f:
                 f.write(title.strip())
@@ -900,9 +884,13 @@ class SuperheroChannelPipeline(BasePipeline):
             description_prompt = f"Generate a detailed YouTube description for a {channel_type} episode with {len(scenes)} scenes. Include character introductions, plot summary, and engaging hooks. Language: {language}"
             
             if llm_model:
-                description = llm_model["generate"](description_prompt, max_tokens=300)
+                try:
+                    description = llm_model["generate"](description_prompt, max_tokens=300)
+                except Exception as e:
+                    logger.warning(f"LLM description generation failed: {e}")
+                    description = self._handle_llm_generation_failure(description_prompt, max_tokens=300)
             else:
-                description = f"An epic superhero adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes!"
+                description = self._handle_llm_generation_failure(description_prompt, max_tokens=300)
             
             with open(output_dir / "description.txt", "w", encoding="utf-8") as f:
                 f.write(description.strip())
@@ -910,9 +898,13 @@ class SuperheroChannelPipeline(BasePipeline):
             next_episode_prompt = f"Based on this superhero episode, suggest 3 compelling storylines for the next episode. Be creative and engaging."
             
             if llm_model:
-                next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
+                try:
+                    next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
+                except Exception as e:
+                    logger.warning(f"LLM next episode generation failed: {e}")
+                    next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, max_tokens=200)
             else:
-                next_suggestions = "1. The adventure continues with new challenges\n2. Character development and new powers\n3. Epic finale with ultimate showdown"
+                next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, max_tokens=200)
             
             with open(output_dir / "next_episode.txt", "w", encoding="utf-8") as f:
                 f.write(next_suggestions.strip())
@@ -941,7 +933,7 @@ class SuperheroChannelPipeline(BasePipeline):
         """Combine scenes into final episode with maximum quality."""
         try:
             if not scene_files:
-                return self._create_fallback_video("No scenes to combine", 60, output_path)
+                return self._handle_video_generation_failure("No scenes to combine", 60, output_path)
             
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 concat_file = f.name
@@ -973,7 +965,7 @@ class SuperheroChannelPipeline(BasePipeline):
                     return output_path
                 else:
                     logger.warning(f"FFmpeg combination failed: {result.stderr}")
-                    return self._create_fallback_video("Episode content", 300, output_path)
+                    return self._handle_video_generation_failure("Episode content", 300, output_path)
                     
             finally:
                 if os.path.exists(concat_file):
@@ -981,7 +973,7 @@ class SuperheroChannelPipeline(BasePipeline):
                     
         except Exception as e:
             logger.error(f"Error combining scenes: {e}")
-            return self._create_fallback_video("Episode content", 300, output_path)
+            return self._handle_video_generation_failure("Episode content", 300, output_path)
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
         """Create shorts by extracting highlights from the main video."""
@@ -1032,34 +1024,7 @@ class SuperheroChannelPipeline(BasePipeline):
             logger.error(f"Error creating superhero shorts: {e}")
             return []
     
-    def _create_fallback_video(self, description: str, duration: float, output_path: str) -> str:
-        """Create fallback video with text overlay."""
-        try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            cmd = [
-                'ffmpeg', '-y',
-                '-f', 'lavfi',
-                '-i', f'color=c=black:size=1920x1080:duration={duration}',
-                '-vf', f'drawtext=text=\'{description}\':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2',
-                '-c:v', 'libx264',
-                '-preset', 'veryslow',
-                '-crf', '15',
-                '-pix_fmt', 'yuv420p',
-                output_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            
-            if result.returncode == 0 and os.path.exists(output_path):
-                return output_path
-            else:
-                logger.warning(f"Fallback video creation failed: {result.stderr}")
-                return output_path
-                
-        except Exception as e:
-            logger.error(f"Error creating fallback video: {e}")
-            return output_path
+
     
     def _create_manifest(self, output_dir: Path, **kwargs):
         """Create manifest file with pipeline information."""

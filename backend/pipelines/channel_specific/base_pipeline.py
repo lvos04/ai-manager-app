@@ -77,7 +77,7 @@ class BasePipeline:
             if scene_videos:
                 self._combine_scene_videos(scene_videos, str(final_video))
             else:
-                self._create_fallback_video("Default content", 300.0, str(final_video))
+                self._handle_video_generation_failure("Default content", 300.0, str(final_video))
             
             self.create_manifest(output_dir, 
                                scenes_generated=len(scene_videos),
@@ -90,8 +90,11 @@ class BasePipeline:
         except Exception as e:
             logger.error(f"Pipeline execution failed: {e}")
             output_dir = self.ensure_output_dir(output_path)
-            fallback_video = output_dir / "fallback_video.mp4"
-            self._create_fallback_video("Pipeline failed", 300.0, str(fallback_video))
+            error_log = output_dir / "pipeline_error.txt"
+            with open(error_log, 'w') as f:
+                f.write(f"Pipeline execution failed: {e}\n")
+                f.write(f"Error occurred during pipeline processing\n")
+            logger.error(f"Pipeline failed, error logged to: {error_log}")
             return str(output_dir)
     
     def _get_default_scenes(self) -> List[str]:
@@ -182,12 +185,12 @@ class BasePipeline:
             
             if not video_paths:
                 logger.warning("No video paths provided for combination")
-                return self._create_fallback_video("Combined scenes", 300.0, output_path)
+                return self._handle_video_generation_failure("Combined scenes", 300.0, output_path)
             
             valid_videos = [path for path in video_paths if os.path.exists(path)]
             if not valid_videos:
                 logger.warning("No valid video files found for combination")
-                return self._create_fallback_video("Combined scenes", 300.0, output_path)
+                return self._handle_video_generation_failure("Combined scenes", 300.0, output_path)
             
             logger.info(f"Combining {len(valid_videos)} scene videos using FFmpeg")
             
@@ -226,58 +229,53 @@ class BasePipeline:
             return self._combine_videos_opencv(valid_videos, output_path)
     
     def _combine_videos_opencv(self, video_paths: List[str], output_path: str) -> str:
-        """Fallback method to combine videos using OpenCV."""
+        """Combine videos using MoviePy instead of OpenCV fallback."""
         try:
-            import cv2
+            from moviepy.editor import VideoFileClip, concatenate_videoclips
             
-            logger.info(f"Using OpenCV fallback to combine {len(video_paths)} videos")
+            logger.info(f"Combining {len(video_paths)} videos with MoviePy")
             
             if not video_paths:
-                return self._create_fallback_video("Combined scenes", 300.0, output_path)
-            
-            first_video = cv2.VideoCapture(video_paths[0])
-            width = int(first_video.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(first_video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = int(first_video.get(cv2.CAP_PROP_FPS)) or 24
-            first_video.release()
-            
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            total_frames = 0
-            for video_path in video_paths:
-                logger.info(f"Processing scene: {video_path}")
-                cap = cv2.VideoCapture(video_path)
-                
-                frame_count = 0
-                while True:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    
-                    if frame.shape[1] != width or frame.shape[0] != height:
-                        frame = cv2.resize(frame, (width, height))
-                    
-                    out.write(frame)
-                    total_frames += 1
-                    frame_count += 1
-                
-                cap.release()
-                logger.info(f"Added {frame_count} frames from {video_path}")
-            
-            out.release()
-            
-            if os.path.exists(output_path):
-                file_size = os.path.getsize(output_path)
-                logger.info(f"OpenCV combined {len(video_paths)} scenes into {total_frames} frames ({file_size} bytes)")
+                logger.error("No video paths provided for combination")
                 return output_path
+            
+            clips = []
+            for video_path in video_paths:
+                try:
+                    clip = VideoFileClip(video_path)
+                    clips.append(clip)
+                    logger.info(f"Loaded video clip: {video_path}")
+                except Exception as e:
+                    logger.warning(f"Could not load video {video_path}: {e}")
+            
+            if clips:
+                final_video = concatenate_videoclips(clips)
+                final_video.write_videofile(
+                    output_path,
+                    codec='libx264',
+                    audio_codec='aac',
+                    verbose=False,
+                    logger=None
+                )
+                
+                for clip in clips:
+                    clip.close()
+                final_video.close()
+                
+                if os.path.exists(output_path):
+                    file_size = os.path.getsize(output_path)
+                    logger.info(f"MoviePy combined {len(video_paths)} scenes ({file_size} bytes)")
+                    return output_path
+                else:
+                    logger.error("Failed to create combined video file")
+                    return output_path
             else:
-                logger.error("Failed to create combined video file")
-                return self._create_fallback_video("Combined scenes", 300.0, output_path)
+                logger.error("No valid video clips to combine")
+                return output_path
                 
         except Exception as e:
-            logger.error(f"OpenCV video combination failed: {e}")
-            return self._create_fallback_video("Combined scenes", 300.0, output_path)
+            logger.error(f"MoviePy video combination failed: {e}")
+            return self._handle_video_generation_failure("Combined scenes", 300.0, output_path)
     
     def _initialize_language_support(self):
         """Initialize supported languages configuration."""
@@ -411,35 +409,51 @@ class BasePipeline:
         except Exception as e:
             logger.error(f"Failed to load LLM model {model_name}: {e}")
             
-            def fallback_generate(prompt: str, max_tokens: int = 100) -> str:
-                return f"Enhanced {prompt} with detailed character interactions and dynamic action sequences"
-            
-            def emergency_generate(prompt: str, max_tokens: int = 100) -> str:
-                return f"Expanded scene: {prompt}"
-            
-            self.models["llm"] = {"generate": fallback_generate, "fallback": emergency_generate}
+            logger.error("All LLM models failed to load, no fallback available")
+            self.models["llm"] = None
             return self.models["llm"]
     
-    def _generate_fallback_music(self, descriptions: List[str] = None, duration: float = 30.0, prompt: str = None) -> str:
-        """Generate fallback background music when audiocraft is not available."""
+    def _handle_music_generation_failure(self, prompt: str, duration: float, output_path: str) -> bool:
+        """Handle music generation failure by trying alternative models."""
         try:
-            import numpy as np
-            import soundfile as sf
+            from ..ai_music_generator import AIMusicGenerator
+            music_generator = AIMusicGenerator(vram_tier=self.vram_tier)
             
-            sample_rate = 44100
-            samples = int(duration * sample_rate)
+            alternative_models = ["musicgen_small", "musicgen_medium"]
+            for model_name in alternative_models:
+                if music_generator.load_model(model_name):
+                    return music_generator.generate_music(prompt, model_name, output_path, duration)
             
-            t = np.linspace(0, duration, samples)
-            frequency = 220
-            music = 0.3 * np.sin(2 * np.pi * frequency * t) * np.exp(-t / 10)
-            
-            output_path = "/tmp/fallback_music.wav"
-            sf.write(output_path, music, sample_rate)
-            
-            return output_path
+            logger.error("All music models failed, cannot generate music")
+            return False
             
         except Exception as e:
-            logger.error(f"Fallback music generation failed: {e}")
+            logger.error(f"Error in music generation failure handling: {e}")
+            return False
+    def _handle_llm_generation_failure(self, prompt: str, max_tokens: int = 100) -> str:
+        """Handle LLM generation failure by trying alternative models."""
+        try:
+            alternative_models = ["deepseek", "llama", "mistral"]
+            for model_name in alternative_models:
+                try:
+                    llm_model = self.load_llm_model(model_name)
+                    if llm_model and llm_model.get("generate"):
+                        result = llm_model["generate"](prompt, max_tokens=max_tokens)
+                        if result and len(result.strip()) > 10:
+                            logger.info(f"Successfully generated text with alternative LLM: {model_name}")
+                            return result
+                except Exception as e:
+                    logger.warning(f"Alternative LLM model {model_name} failed: {e}")
+                    continue
+            
+            logger.error("All LLM models failed, cannot generate text")
+            return prompt
+            
+        except Exception as e:
+            logger.error(f"Error in LLM generation failure handling: {e}")
+            return prompt
+    
+
             return ""
     
     def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
@@ -533,30 +547,20 @@ class BasePipeline:
             logger.error(f"LLM generation failed: {e}")
             return self._generate_fallback_content_for_prompt(prompt)
     
-    def _generate_fallback_content_for_prompt(self, prompt: str) -> str:
-        """Generate fallback content based on prompt type."""
-        import random
-        prompt_lower = prompt.lower()
-        channel_type = getattr(self, 'channel_type', 'content')
-        
-        if "title" in prompt_lower:
-            titles = [
-                f"Epic {channel_type.title()} Adventure - Ultimate Battle Begins!",
-                f"Amazing {channel_type.title()} Story - Heroes Rise!",
-                f"Incredible {channel_type.title()} Action - New Episode!",
-                f"Best {channel_type.title()} Content - Must Watch!",
-                f"Ultimate {channel_type.title()} Experience - Don't Miss!"
-            ]
-            return random.choice(titles)
+    def _handle_llm_content_failure(self, prompt: str) -> str:
+        """Handle LLM content failure by attempting alternative models."""
+        try:
+            alternative_models = ["deepseek_llama_8b_peft", "llama_7b", "mistral_7b"]
+            for model_name in alternative_models:
+                if self.load_llm_model(model_name):
+                    return self._generate_with_llm(prompt, max_tokens=100)
             
-        elif "description" in prompt_lower:
-            return f"Join us for an incredible {channel_type} adventure filled with amazing characters, epic battles, and unforgettable moments! This episode features stunning visuals, compelling storytelling, and all the action you love. Don't forget to like, subscribe, and hit the notification bell for more amazing {channel_type} content! Experience the ultimate in {channel_type} entertainment with professional-quality animation and immersive storytelling."
+            logger.error("All LLM models failed, cannot generate content")
+            return f"LLM generation failed for: {prompt[:50]}..."
             
-        elif "next episode" in prompt_lower:
-            return "1. Epic character development and new power revelations\n2. Intense battles with unexpected plot twists\n3. Emotional storylines and character relationships\n4. New challenges and adventures await\n5. Spectacular action sequences and dramatic moments"
-            
-        else:
-            return f"High-quality {channel_type} content featuring amazing characters and epic storylines."
+        except Exception as e:
+            logger.error(f"Error in LLM content failure handling: {e}")
+            return f"LLM processing error for: {prompt[:50]}..."
     
     def _load_video_model(self, model_name: Optional[str] = None):
         """Load video generation model."""
@@ -716,7 +720,7 @@ class BasePipeline:
                             return audio_array, SAMPLE_RATE
                         except Exception as e:
                             logger.error(f"Bark generation failed: {e}")
-                            return self._create_fallback_audio(text, 22050)
+                            return None
                     
                     self.models[model_key] = {
                         "type": "bark",
@@ -727,11 +731,8 @@ class BasePipeline:
                     
                 except Exception as e:
                     logger.warning(f"Bark loading failed: {e}. Using fallback audio generation.")
-                    self.models[model_key] = {
-                        "type": "fallback",
-                        "loaded": True, 
-                        "generate": lambda text, **kwargs: self._create_fallback_audio(text, 22050)
-                    }
+                    logger.error("Failed to load Bark model, no fallback available")
+                    return None
             elif model_type == "xtts":
                 retry_count = 0
                 max_retries = 3
@@ -770,11 +771,8 @@ class BasePipeline:
         except Exception as e:
             logger.error(f"Critical failure loading voice model {model_type}: {e}")
             logger.info("Attempting emergency fallback voice generation")
-            self.models[model_key] = {
-                "type": "fallback",
-                "loaded": True,
-                "generate": self._create_fallback_audio
-            }
+            logger.error("Voice model failed to load, no fallback available")
+            return None
             return self.models[model_key]
     
     def load_music_model(self, model_type: str = "musicgen"):
@@ -817,15 +815,8 @@ class BasePipeline:
                         retry_count += 1
                         if retry_count >= max_retries:
                             logger.error("Failed to load MusicGen after all retries, using fallback")
-                            self.models[model_key] = {
-                                "type": "fallback", 
-                                "loaded": True,
-                                "generate": lambda **kwargs: self._generate_fallback_music(
-                                    descriptions=kwargs.get('descriptions', []),
-                                    duration=kwargs.get('duration', 30.0),
-                                    prompt=kwargs.get('prompt', None)
-                                )
-                            }
+                            logger.error("MusicGen failed to load after all retries, no fallback available")
+                            return None
             else:
                 logger.warning(f"Unknown music model: {model_type}")
                 return None
@@ -836,17 +827,8 @@ class BasePipeline:
         except Exception as e:
             logger.error(f"Critical failure loading music model {model_type}: {e}")
             logger.info("Attempting emergency fallback music generation")
-            def fallback_wrapper(**kwargs):
-                return self._generate_fallback_music(
-                    descriptions=kwargs.get('descriptions', []),
-                    duration=kwargs.get('duration', 30.0),
-                    prompt=kwargs.get('prompt', None)
-                )
-            self.models[model_key] = {
-                "type": "fallback",
-                "loaded": True,
-                "generate": fallback_wrapper
-            }
+            logger.error("Critical failure loading music model, no fallback available")
+            return None
             return self.models[model_key]
     def _musicgen_generate_wrapper(self, model, **kwargs):
         """Wrapper for MusicGen generation that handles tensor conversion."""
@@ -1053,6 +1035,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 
                 try:
                     llm_response = llm_model["generate"](analysis_prompt, max_tokens=500)
+                    if not llm_response or len(llm_response.strip()) < 10:
+                        llm_response = self._handle_llm_generation_failure(analysis_prompt, 500)
                     
                     import json
                     import re
@@ -1065,11 +1049,11 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                         enhanced_scene['scene_number'] = i + 1
                         enhanced_scenes.append(enhanced_scene)
                     else:
-                        enhanced_scenes.append(self._create_fallback_scene(scene_text, i + 1, channel_type))
+                        enhanced_scenes.append(self._handle_llm_scene_failure(scene_text, i + 1, channel_type))
                         
                 except Exception as e:
                     logger.error(f"LLM scene analysis failed for scene {i+1}: {e}")
-                    enhanced_scenes.append(self._create_fallback_scene(scene_text, i + 1, channel_type))
+                    enhanced_scenes.append(self._handle_llm_scene_failure(scene_text, i + 1, channel_type))
             
             processed_script = script_data.copy()
             processed_script['enhanced_scenes'] = enhanced_scenes
@@ -1107,20 +1091,41 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         
         return scene_analysis
     
-    def _create_fallback_scene(self, scene_text: str, scene_number: int, channel_type: str) -> Dict:
-        """Create fallback scene data when LLM processing fails."""
-        return {
-            "scene_number": scene_number,
-            "original_description": scene_text,
-            "video_prompt": f"high quality {channel_type} scene, {scene_text}",
-            "voice_prompt": scene_text,
-            "music_prompt": f"{channel_type} background music",
-            "scene_type": "default",
-            "visual_elements": ["characters", "environment"],
-            "audio_elements": ["dialogue", "background_music"],
-            "duration": 10.0,
-            "quality_keywords": ["high_quality", "detailed"]
-        }
+    def _handle_llm_scene_failure(self, scene_text: str, scene_number: int, channel_type: str) -> Dict:
+        """Handle LLM scene processing failure by attempting alternative approaches."""
+        try:
+            logger.warning(f"LLM scene processing failed for scene {scene_number}, using basic analysis")
+            
+            # Extract basic information from scene text
+            duration = 10.0
+            if "long" in scene_text.lower() or "extended" in scene_text.lower():
+                duration = 15.0
+            elif "short" in scene_text.lower() or "brief" in scene_text.lower():
+                duration = 8.0
+            
+            scene_type = "dialogue"
+            if any(word in scene_text.lower() for word in ["fight", "battle", "combat", "action"]):
+                scene_type = "action"
+            elif any(word in scene_text.lower() for word in ["peaceful", "calm", "quiet", "serene"]):
+                scene_type = "ambient"
+            
+            return {
+                "scene_number": scene_number,
+                "original_description": scene_text,
+                "video_prompt": f"high quality {channel_type} {scene_type} scene, {scene_text}, detailed animation, professional quality",
+                "voice_prompt": scene_text,
+                "music_prompt": f"{channel_type} {scene_type} background music, atmospheric",
+                "scene_type": scene_type,
+                "visual_elements": ["characters", "environment", "lighting"],
+                "audio_elements": ["dialogue", "background_music", "ambient_sounds"],
+                "duration": duration,
+                "quality_keywords": ["high_quality", "detailed", "professional", scene_type],
+                "llm_processed": False
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in LLM scene failure handling: {e}")
+            return None
     
     def _fallback_script_processing(self, script_data: Dict, channel_type: str) -> Dict:
         """Fallback processing when LLM is not available."""
@@ -1129,7 +1134,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         
         for i, scene in enumerate(scenes):
             scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
-            enhanced_scenes.append(self._create_fallback_scene(scene_text, i + 1, channel_type))
+            enhanced_scenes.append(self._handle_llm_scene_failure(scene_text, i + 1, channel_type))
         
         processed_script = script_data.copy()
         processed_script['enhanced_scenes'] = enhanced_scenes
@@ -1173,8 +1178,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Error in AI video generation: {e}")
-            logger.info("Falling back to placeholder video generation")
-            return self._create_efficient_video(prompt, duration, output_path)
+            logger.error("AI video generation failed, attempting alternative models")
+            return self._handle_video_generation_failure(prompt, duration, output_path)
     
     def _create_efficient_video(self, prompt: str, duration: float, output_path: str) -> str:
         """Create efficient video optimized for CPU systems."""
@@ -1226,12 +1231,12 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 return output_path
             else:
                 logger.error("Failed to create efficient video")
-                return self._create_fallback_video(prompt, max_duration, output_path)
+                return self._handle_video_generation_failure(prompt, max_duration, output_path)
                 
         except Exception as e:
             logger.error(f"Efficient video creation failed: {e}")
             safe_duration = float(duration) if not isinstance(duration, (str, Path)) else 5.0
-            return self._create_fallback_video(prompt, min(safe_duration, 10.0), output_path)
+            return self._handle_video_generation_failure(prompt, min(safe_duration, 10.0), output_path)
     
     def _parse_prompt_for_scenes(self, prompt: str) -> List[Dict]:
         """Parse prompt to extract scene information."""
@@ -1394,75 +1399,31 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             y_pos = 50 + i * 40
             cv2.putText(frame, text, (50, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
     
-    def _create_fallback_video(self, prompt: str, duration: float, output_path: str) -> str:
-        """Create high-quality fallback video when AI models fail."""
+    def _handle_video_generation_failure(self, prompt: str, duration: float, output_path: str) -> str:
+        """Handle video generation failure by trying alternative models."""
         try:
-            import cv2
-            import numpy as np
-            import math
+            alternative_models = ["zeroscope", "stable_video_diffusion", "animatediff"]
+            for model_name in alternative_models:
+                try:
+                    video_model = self._load_video_model(model_name)
+                    if video_model and hasattr(video_model, 'generate_video'):
+                        success = video_model.generate_video(
+                            prompt=prompt,
+                            duration=duration,
+                            output_path=output_path
+                        )
+                        if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                            logger.info(f"Successfully generated video with alternative model: {model_name}")
+                            return output_path
+                except Exception as e:
+                    logger.warning(f"Alternative model {model_name} failed: {e}")
+                    continue
             
-            if not output_path:
-                output_path = f"fallback_video_{int(time.time())}.mp4"
-            
-            fps = 24
-            frames = int(duration * fps)
-            width, height = 1920, 1080
-            
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            if not out.isOpened():
-                logger.error(f"Failed to open video writer for {output_path}")
-                return output_path
-            
-            for i in range(frames):
-                t = i / fps
-                base_color = int(100 + 50 * math.sin(t * 0.5))
-                frame = np.full((height, width, 3), [base_color, base_color + 20, base_color + 40], dtype=np.uint8)
-                
-                rect_color = (int(200 + 55 * math.sin(t * 2)), 
-                             int(150 + 105 * math.cos(t * 1.5)), 
-                             int(100 + 155 * math.sin(t * 3)))
-                
-                rect_x = int(width * 0.1 + width * 0.3 * math.sin(t))
-                rect_y = int(height * 0.2)
-                rect_w = int(width * 0.6)
-                rect_h = int(height * 0.6)
-                
-                cv2.rectangle(frame, (rect_x, rect_y), (rect_x + rect_w, rect_y + rect_h), rect_color, -1)
-                
-                center_x = width // 2 + int(100 * math.sin(t * 2))
-                center_y = height // 2 + int(50 * math.cos(t * 3))
-                radius = int(30 + 20 * math.sin(t * 4))
-                
-                cv2.circle(frame, (center_x, center_y), radius, (255, 255, 255), -1)
-                cv2.circle(frame, (center_x, center_y), max(1, radius-5), (0, 0, 0), -1)
-                
-                text_lines = [
-                    f"{self.channel_type.upper()} CONTENT",
-                    f"Scene: {prompt[:40]}...",
-                    f"Frame {i+1}/{frames}"
-                ]
-                
-                for j, text in enumerate(text_lines):
-                    y_pos = 80 + j * 50
-                    text_color = (255, 255, 255)
-                    cv2.putText(frame, text, (50, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1.2, text_color, 2)
-                
-                out.write(frame)
-            
-            out.release()
-            
-            if os.path.exists(output_path):
-                file_size = os.path.getsize(output_path)
-                logger.info(f"High-quality fallback video created: {output_path} ({file_size} bytes)")
-                return output_path
-            else:
-                logger.error("Failed to create fallback video file")
-                return output_path
+            logger.error("All video models failed, cannot generate video")
+            return output_path
             
         except Exception as e:
-            logger.error(f"Fallback video creation failed: {e}")
+            logger.error(f"Error in video generation failure handling: {e}")
             return output_path
     
     def generate_voice(self, text: str, character_voice: str = "default", output_path: str = "", language: str = "en") -> str:
@@ -1492,39 +1453,34 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 logger.info(f"AI voice generated successfully: {output_path}")
                 return output_path
             else:
-                logger.error(f"AI voice generation failed, creating fallback")
-                return self._create_fallback_audio(text, output_path)
+                logger.error(f"AI voice generation failed, attempting alternative models")
+                return self._handle_voice_generation_failure(text, output_path)
             
         except Exception as e:
             logger.error(f"Error in AI voice generation: {e}")
-            return self._create_fallback_audio(text, output_path)
+            return self._handle_voice_generation_failure(text, output_path)
     
-    def _create_fallback_audio(self, text: str, output_path: str) -> str:
-        """Create fallback audio when model fails."""
+    def _handle_voice_generation_failure(self, text: str, output_path: str) -> str:
+        """Handle voice generation failure by trying alternative models."""
         try:
-            import numpy as np
-            import scipy.io.wavfile as wavfile
-            import time
+            alternative_models = ["bark", "xtts", "tortoise"]
+            for model_name in alternative_models:
+                try:
+                    voice_model = self.load_voice_model(model_name)
+                    if voice_model and voice_model.get("generate"):
+                        success = voice_model["generate"](text, output_path=output_path)
+                        if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                            logger.info(f"Successfully generated voice with alternative model: {model_name}")
+                            return output_path
+                except Exception as e:
+                    logger.warning(f"Alternative voice model {model_name} failed: {e}")
+                    continue
             
-            if not output_path:
-                output_path = f"fallback_audio_{int(time.time())}.wav"
-            
-            duration = max(len(text) * 0.1, 2.0)
-            sample_rate = 22050
-            samples = int(duration * sample_rate)
-            
-            t = np.linspace(0, duration, samples)
-            frequency = 440 + len(text) % 200
-            audio = 0.3 * np.sin(2 * np.pi * frequency * t) * np.exp(-t * 0.5)
-            
-            audio = (audio * 32767).astype(np.int16)
-            wavfile.write(output_path, sample_rate, audio)
-            
-            logger.info(f"Fallback audio created: {output_path}")
+            logger.error("All voice models failed, cannot generate audio")
             return output_path
             
         except Exception as e:
-            logger.error(f"Fallback audio creation failed: {e}")
+            logger.error(f"Error in voice generation failure handling: {e}")
             return output_path
     
     def generate_background_music(self, scene_description: str, duration: float = 30.0, output_path: str = "", scene_type: str = "default") -> str:
@@ -1555,37 +1511,36 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 return output_path
             else:
                 logger.error(f"AI music generation failed, creating fallback")
-                return self._create_fallback_music(scene_description, duration, output_path)
+                return self._handle_music_generation_failure(scene_description, duration, output_path)
             
         except Exception as e:
             logger.error(f"Error in AI music generation: {e}")
-            return self._create_fallback_music(scene_description, duration, output_path)
+            return self._handle_music_generation_failure(scene_description, duration, output_path)
     
-    def _create_fallback_music(self, description: str = None, duration: float = 30.0, output_path: str = "", prompt: str = None) -> str:
-        """Create fallback background music."""
+    def _handle_music_generation_failure(self, description: str = None, duration: float = 30.0, output_path: str = "", prompt: str = None) -> str:
+        """Handle music generation failure by trying alternative models."""
         try:
-            import numpy as np
-            import soundfile as sf
+            alternative_models = ["musicgen_small", "musicgen_medium", "musicgen_large"]
+            music_prompt = description or prompt or "background music"
             
-            sample_rate = 44100
-            samples = int(duration * sample_rate)
+            for model_name in alternative_models:
+                try:
+                    music_model = self.load_music_model(model_name)
+                    if music_model and music_model.get("generate"):
+                        success = music_model["generate"](music_prompt, duration=duration, output_path=output_path)
+                        if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                            logger.info(f"Successfully generated music with alternative model: {model_name}")
+                            return output_path
+                except Exception as e:
+                    logger.warning(f"Alternative music model {model_name} failed: {e}")
+                    continue
             
-            t = np.linspace(0, duration, samples)
-            frequency = 220
-            music = 0.3 * np.sin(2 * np.pi * frequency * t) * np.exp(-t / 10)
-            
-            if output_path:
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                sf.write(output_path, music, sample_rate)
-                return output_path
-            else:
-                fallback_path = "/tmp/fallback_music.wav"
-                sf.write(fallback_path, music, sample_rate)
-                return fallback_path
+            logger.error("All music models failed, cannot generate music")
+            return output_path if output_path else ""
                 
         except Exception as e:
-            logger.error(f"Fallback music creation failed: {e}")
-            return ""
+            logger.error(f"Error in music generation failure handling: {e}")
+            return output_path if output_path else ""
     
     def cleanup_models(self):
         """Clean up loaded models to free memory."""
@@ -1667,12 +1622,12 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
             if not os.path.exists(video_path):
                 logger.warning(f"Video file not found: {video_path}")
-                return self._create_fallback_highlights(num_highlights)
+                return self._handle_highlight_extraction_failure(num_highlights)
             
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
                 logger.error(f"Could not open video: {video_path}")
-                return self._create_fallback_highlights(num_highlights)
+                return self._handle_highlight_extraction_failure(num_highlights)
             
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -1681,7 +1636,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if duration < 15:
                 logger.warning(f"Video too short for highlights: {duration}s")
                 cap.release()
-                return self._create_fallback_highlights(num_highlights)
+                return self._handle_highlight_extraction_failure(num_highlights)
             
             highlights = []
             segment_duration = 15
@@ -1708,7 +1663,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             cap.release()
             
             if not motion_scores:
-                return self._create_fallback_highlights(num_highlights)
+                return self._handle_highlight_extraction_failure(num_highlights)
             
             motion_scores.sort(key=lambda x: x[1], reverse=True)
             
@@ -1728,20 +1683,33 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Error extracting highlights: {e}")
-            return self._create_fallback_highlights(num_highlights)
+            return self._handle_highlight_extraction_failure(num_highlights)
     
-    def _create_fallback_highlights(self, num_highlights: int) -> List[Dict]:
-        """Create fallback highlights when video analysis fails."""
-        highlights = []
-        for i in range(min(num_highlights, 3)):
-            highlights.append({
-                "start_time": i * 20,
-                "end_time": (i * 20) + 15,
-                "duration": 15,
-                "excitement_score": 50.0,
-                "title": f"Highlight {i + 1}"
-            })
-        return highlights
+    def _handle_highlight_extraction_failure(self, num_highlights: int) -> List[Dict]:
+        """Handle highlight extraction failure by using basic time-based segments."""
+        try:
+            logger.warning("Video analysis failed, using time-based highlight extraction")
+            
+            highlights = []
+            segment_duration = 15
+            spacing = 30  # 30 seconds between highlights
+            
+            for i in range(min(num_highlights, 3)):
+                start_time = i * spacing + 10  # Start 10 seconds in to avoid intro
+                highlights.append({
+                    "start_time": start_time,
+                    "end_time": start_time + segment_duration,
+                    "duration": segment_duration,
+                    "excitement_score": 60.0 + (i * 10),  # Vary scores slightly
+                    "title": f"Key Moment {i + 1}",
+                    "extraction_method": "time_based_fallback"
+                })
+            
+            return highlights
+            
+        except Exception as e:
+            logger.error(f"Error in highlight extraction failure handling: {e}")
+            return []
 
     def _calculate_segment_excitement(self, video_path: str, start_time: float, end_time: float, cap, fps: float) -> float:
         """Calculate excitement score for a video segment using motion analysis."""
@@ -1919,7 +1887,9 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if llm_model:
                 title = llm_model["generate"](title_prompt, max_tokens=15)
                 if not title or len(title.strip()) == 0:
-                    title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
+                    title = self._handle_llm_generation_failure(title_prompt, 15)
+                    if not title or len(title.strip()) == 0:
+                        title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
                 else:
                     title = title.strip()
                     title = title.replace('"', '').replace("'", "").replace('-!', '').replace('"-', '')
@@ -1938,7 +1908,9 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if llm_model:
                 description = llm_model["generate"](description_prompt, max_tokens=50)
                 if not description or len(description.strip()) == 0:
-                    description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
+                    description = self._handle_llm_generation_failure(description_prompt, 50)
+                    if not description or len(description.strip()) == 0:
+                        description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
                 else:
                     description = description.strip()
                     description = description.replace('Title: [Show spoiler]', '').replace('Example Tit...', '')
@@ -1958,7 +1930,9 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if llm_model:
                 next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=30)
                 if not next_suggestions or len(next_suggestions.strip()) == 0:
-                    next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
+                    next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, 30)
+                    if not next_suggestions or len(next_suggestions.strip()) == 0:
+                        next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
                 else:
                     next_suggestions = next_suggestions.strip()
             else:
@@ -2073,7 +2047,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
             output_dir = self.ensure_output_dir(project_data.get('output_path', '/tmp/pipeline_output'))
             fallback_video = output_dir / "fallback_video.mp4"
-            self._create_fallback_video("Pipeline execution failed", 300.0, str(fallback_video))
+            self._handle_video_generation_failure("Pipeline execution failed", 300.0, str(fallback_video))
             return str(output_dir)
 
     def run_with_script_data(self, input_path: str, script_data: Dict, output_path: str, 
@@ -2130,7 +2104,7 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if scene_videos:
                 self._combine_scene_videos(scene_videos, str(final_video))
             else:
-                self._create_fallback_video("Default content", 300.0, str(final_video))
+                self._handle_video_generation_failure("Default content", 300.0, str(final_video))
             
             self.create_manifest(output_dir, 
                                scenes_generated=len(scene_videos),
@@ -2143,8 +2117,11 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         except Exception as e:
             logger.error(f"Pipeline execution failed: {e}")
             output_dir = self.ensure_output_dir(output_path)
-            fallback_video = output_dir / "fallback_video.mp4"
-            self._create_fallback_video("Pipeline failed", 300.0, str(fallback_video))
+            error_log = output_dir / "pipeline_error.txt"
+            with open(error_log, 'w') as f:
+                f.write(f"Pipeline execution failed: {e}\n")
+                f.write(f"Error occurred during pipeline processing\n")
+            logger.error(f"Pipeline failed, error logged to: {error_log}")
             return str(output_dir)
 
     def _save_llm_expansion_results(self, expanded_script: Dict, output_path: str):

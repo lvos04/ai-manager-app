@@ -165,7 +165,7 @@ class AIVoiceGenerator:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load voice model: {model_name}")
-                return self._create_fallback_audio(text, output_path)
+                return self._handle_voice_generation_failure(text, output_path)
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -177,11 +177,11 @@ class AIVoiceGenerator:
                 return self._generate_xtts_voice(text, output_path, language, character_voice)
             else:
                 logger.error(f"Unknown voice generation method for {model_name}")
-                return self._create_fallback_audio(text, output_path)
+                return self._handle_voice_generation_failure(text, output_path)
                 
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
-            return self._create_fallback_audio(text, output_path)
+            return self._handle_voice_generation_failure(text, output_path)
     
     def _generate_bark_voice(self, text: str, output_path: str, language: str, character_voice: str) -> bool:
         """Generate voice using Bark."""
@@ -413,53 +413,46 @@ class AIVoiceGenerator:
             
         except Exception as e:
             logger.error(f"Error combining audio files: {e}")
-            self._combine_audio_ffmpeg(audio_files, output_path)
+            self._combine_audio_with_pydub(audio_files, output_path)
     
-    def _combine_audio_ffmpeg(self, audio_files: List[str], output_path: str):
-        """Fallback audio combination using FFmpeg."""
+    def _combine_audio_with_pydub(self, audio_files: List[str], output_path: str):
+        """Combine audio files using pydub instead of FFmpeg fallback."""
         try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-                concat_file = f.name
-                for audio_file in audio_files:
-                    if os.path.exists(audio_file):
-                        f.write(f"file '{audio_file}'\n")
+            from pydub import AudioSegment
             
-            cmd = [
-                'ffmpeg', '-f', 'concat', '-safe', '0', '-i', concat_file,
-                '-c', 'copy', '-y', output_path
-            ]
+            combined = AudioSegment.empty()
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            for audio_file in audio_files:
+                if os.path.exists(audio_file):
+                    try:
+                        audio = AudioSegment.from_file(audio_file)
+                        combined += audio
+                    except Exception as e:
+                        logger.warning(f"Could not load audio file {audio_file}: {e}")
             
-            if os.path.exists(concat_file):
-                os.unlink(concat_file)
-            
-            if result.returncode == 0:
-                logger.info("Audio files combined successfully with FFmpeg")
+            if len(combined) > 0:
+                combined.export(output_path, format="wav")
+                logger.info("Audio files combined successfully with pydub")
             else:
-                logger.error(f"FFmpeg audio combination failed: {result.stderr}")
+                logger.error("No valid audio files to combine")
                 
         except Exception as e:
-            logger.error(f"Error in FFmpeg audio combination: {e}")
+            logger.error(f"Error in pydub audio combination: {e}")
     
-    def _create_fallback_audio(self, text: str, output_path: str) -> bool:
-        """Create fallback silent audio when AI generation fails."""
+    def _handle_voice_generation_failure(self, text: str, output_path: str) -> bool:
+        """Handle voice generation failure by trying alternative models."""
         try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            alternative_models = ["bark", "xtts"]
+            for model_name in alternative_models:
+                if model_name != self.current_model:
+                    if self.load_model(model_name):
+                        return self.generate_voice(text, output_path)
             
-            duration = max(len(text) * 0.1, 1.0)
-            sample_rate = 48000
-            frames = int(duration * sample_rate)
-            
-            silence = np.zeros(frames, dtype=np.int16)
-            
-            wavfile.write(output_path, sample_rate, silence)
-            
-            logger.warning(f"Created fallback silent audio: {output_path}")
-            return True
+            logger.error("All voice models failed, cannot generate audio")
+            return False
             
         except Exception as e:
-            logger.error(f"Error creating fallback audio: {e}")
+            logger.error(f"Error in voice generation failure handling: {e}")
             return False
     
     def force_cleanup_all_models(self):

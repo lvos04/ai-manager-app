@@ -20,54 +20,7 @@ def _get_video_generator():
     except ImportError as e:
         logger.error(f"Failed to import TextToVideoGenerator: {e}")
         
-        class FallbackVideoGenerator:
-            def __init__(self, vram_tier="medium", target_resolution=(1920, 1080)):
-                self.vram_tier = vram_tier
-                self.target_resolution = target_resolution
-                self.device = "cuda" if vram_tier != "cpu" else "cpu"
-            
-            def generate_video(self, prompt: str, output_path: str, duration: float = 5.0, width: int = 1920, height: int = 1080, model_name: str = "fallback") -> bool:
-                """Fallback video generation when real models fail."""
-                try:
-                    import cv2
-                    import numpy as np
-                    import os
-                    
-                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                    
-                    duration = min(duration, 5.0)
-                    fps = 24
-                    frames = int(duration * fps)
-                    
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-                    
-                    if not out.isOpened():
-                        return False
-                    
-                    for i in range(min(frames, 120)):
-                        frame = np.zeros((height, width, 3), dtype=np.uint8)
-                        frame[:] = (20, 20, 40)
-                        
-                        try:
-                            cv2.putText(frame, "AI Generated Scene", 
-                                       (50, height//2 - 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
-                            cv2.putText(frame, f"Prompt: {prompt[:50]}...", 
-                                       (50, height//2 + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
-                            cv2.putText(frame, f"Frame {i+1}", 
-                                       (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (150, 150, 150), 2)
-                        except:
-                            pass
-                        
-                        out.write(frame)
-                    
-                    out.release()
-                    return True
-                    
-                except Exception as e:
-                    return False
-        
-        return FallbackVideoGenerator
+        return None
 
 class AsyncPipelineManager:
     """Async pipeline manager for coordinating video generation tasks."""
@@ -211,54 +164,23 @@ def _get_pipeline_utils():
     """Inline pipeline utilities to replace pipeline_utils."""
     class InlinePipelineUtils:
         def generate_voice_lines(self, text: str, character_voice: str, output_path: str) -> bool:
-            """Generate voice lines with fallback to silent audio."""
+            """Generate voice lines using real AI models."""
             try:
-                import os
-                import wave
-                import struct
-                
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                
-                duration = max(len(text) * 0.1, 1.0)
-                sample_rate = 48000
-                frames = int(duration * sample_rate)
-                
-                with wave.open(output_path, 'wb') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(sample_rate)
-                    
-                    for _ in range(frames):
-                        wav_file.writeframes(struct.pack('<h', 0))
-                
-                return True
-                
+                from ..pipelines.ai_voice_generator import AIVoiceGenerator
+                voice_gen = AIVoiceGenerator()
+                return voice_gen.generate_voice(text, output_path)
             except Exception as e:
+                logger.error(f"Voice generation failed: {e}")
                 return False
         
         def generate_background_music(self, description: str, duration: float, output_path: str) -> bool:
-            """Generate background music with fallback to silent audio."""
+            """Generate background music using real AI models."""
             try:
-                import os
-                import wave
-                import struct
-                
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                
-                sample_rate = 48000
-                frames = int(duration * sample_rate)
-                
-                with wave.open(output_path, 'wb') as wav_file:
-                    wav_file.setnchannels(2)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(sample_rate)
-                    
-                    for _ in range(frames):
-                        wav_file.writeframes(struct.pack('<hh', 0, 0))
-                
-                return True
-                
+                from ..pipelines.ai_music_generator import AIMusicGenerator
+                music_gen = AIMusicGenerator()
+                return music_gen.generate_music(description, "musicgen_small", output_path, duration)
             except Exception as e:
+                logger.error(f"Music generation failed: {e}")
                 return False
     
     return InlinePipelineUtils()

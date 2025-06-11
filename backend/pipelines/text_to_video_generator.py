@@ -376,7 +376,7 @@ class TextToVideoGenerator:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load model: {model_name}")
-                return self._create_fallback_video(prompt, duration, output_path)
+                return self._handle_video_generation_failure(prompt, duration, output_path)
             
             settings = self.get_optimal_settings(model_name)
             optimized_prompt = self.optimize_prompt_for_model(prompt, model_name, scene_type)
@@ -397,11 +397,11 @@ class TextToVideoGenerator:
                 return self._generate_modelscope_video(pipeline, optimized_prompt, output_path, settings)
             else:
                 logger.error(f"Unknown generation method for {model_name}")
-                return self._create_fallback_video(prompt, duration, output_path)
+                return self._handle_video_generation_failure(prompt, duration, output_path)
                 
         except Exception as e:
             logger.error(f"Error generating video: {e}")
-            return self._create_fallback_video(prompt, duration, output_path)
+            return self._handle_video_generation_failure(prompt, duration, output_path)
     
     def _generate_svd_video(self, pipeline, prompt: str, output_path: str, settings: Dict) -> bool:
         """Generate video using SVD-XT."""
@@ -582,36 +582,29 @@ class TextToVideoGenerator:
             
         except Exception as e:
             logger.error(f"Error saving video frames: {e}")
-            self._save_video_opencv(frames, output_path, fps)
+            logger.error("Video frame saving failed, attempting alternative approach")
+            return False
     
-    def _save_video_opencv(self, frames: List[Image.Image], output_path: str, fps: int = 24):
-        """Fallback video saving using OpenCV."""
+    def _save_video_with_alternative_method(self, frames: List[Image.Image], output_path: str, fps: int = 24):
+        """Save video using alternative method when primary fails."""
         try:
             if not frames:
-                return
+                logger.error("No frames to save")
+                return False
             
-            first_frame = frames[0]
-            if isinstance(first_frame, Image.Image):
-                height, width = first_frame.size[1], first_frame.size[0]
-            else:
-                height, width = first_frame.shape[:2]
-            
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            for frame in frames:
-                if isinstance(frame, Image.Image):
-                    frame_array = np.array(frame)
-                    frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
-                else:
-                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                
-                out.write(frame_bgr)
-            
-            out.release()
+            try:
+                from moviepy.editor import ImageSequenceClip
+                clip = ImageSequenceClip([np.array(frame) for frame in frames], fps=fps)
+                clip.write_videofile(output_path, codec='libx264', audio=False, verbose=False, logger=None)
+                clip.close()
+                return True
+            except Exception as e:
+                logger.error(f"MoviePy alternative failed: {e}")
+                return False
             
         except Exception as e:
-            logger.error(f"Error saving video with OpenCV: {e}")
+            logger.error(f"Error in alternative video saving: {e}")
+            return False
     
     def get_optimal_settings(self, model_name: str) -> Dict:
         """Get optimal settings for model based on VRAM tier."""
@@ -652,42 +645,20 @@ class TextToVideoGenerator:
         
         return optimized
     
-    def _create_fallback_video(self, prompt: str, duration: float, output_path: str) -> bool:
-        """Create fallback video when AI generation fails."""
+    def _handle_video_generation_failure(self, prompt: str, duration: float, output_path: str) -> bool:
+        """Handle video generation failure by trying alternative models."""
         try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            alternative_models = ["animatediff_v2_sdxl", "zeroscope_v2_xl", "modelscope_t2v"]
+            for model_name in alternative_models:
+                if model_name != self.current_model:
+                    if self.load_model(model_name):
+                        return self.generate_video(prompt, model_name, output_path, duration)
             
-            fps = 24
-            frames = int(duration * fps)
-            width, height = self.target_resolution
-            
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            if not out.isOpened():
-                return False
-            
-            for i in range(frames):
-                frame = np.zeros((height, width, 3), dtype=np.uint8)
-                frame[:] = (30, 30, 60)
-                
-                try:
-                    cv2.putText(frame, "AI Generation Failed", 
-                               (50, height//2 - 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-                    cv2.putText(frame, f"Prompt: {prompt[:50]}...", 
-                               (50, height//2 + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
-                    cv2.putText(frame, f"Frame {i+1}/{frames}", 
-                               (50, height//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (150, 150, 150), 2)
-                except:
-                    pass
-                
-                out.write(frame)
-            
-            out.release()
-            return True
+            logger.error("All video models failed, cannot generate video")
+            return False
             
         except Exception as e:
-            logger.error(f"Error creating fallback video: {e}")
+            logger.error(f"Error in video generation failure handling: {e}")
             return False
     
     def force_cleanup_all_models(self):

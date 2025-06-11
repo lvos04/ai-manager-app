@@ -153,7 +153,7 @@ class AIMusicGenerator:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load music model: {model_name}")
-                return self._create_fallback_music(description, duration, output_path)
+                return self._handle_music_generation_failure(description, duration, output_path)
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -168,11 +168,11 @@ class AIMusicGenerator:
                 return self._generate_musicgen_audio(optimized_prompt, output_path, actual_duration)
             else:
                 logger.error(f"Unknown music generation method for {model_name}")
-                return self._create_fallback_music(description, duration, output_path)
+                return self._handle_music_generation_failure(description, duration, output_path)
                 
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            return self._create_fallback_music(description, duration, output_path)
+            return self._handle_music_generation_failure(description, duration, output_path)
     
     def _generate_musicgen_audio(self, prompt: str, output_path: str, duration: float) -> bool:
         """Generate music using MusicGen."""
@@ -251,7 +251,7 @@ class AIMusicGenerator:
                     music_files.append(output_file)
                 else:
                     fallback_file = os.path.join(output_dir, f"fallback_music_{i+1}.wav")
-                    self._create_fallback_music(scene_desc, scene_duration, fallback_file)
+                    self._handle_music_generation_failure(scene_desc, scene_duration, fallback_file)
                     music_files.append(fallback_file)
             
             return music_files
@@ -343,23 +343,20 @@ class AIMusicGenerator:
             logger.error(f"Error in FFmpeg music combination: {e}")
             return False
     
-    def _create_fallback_music(self, description: str, duration: float, output_path: str) -> bool:
-        """Create fallback silent audio when AI generation fails."""
+    def _handle_music_generation_failure(self, description: str, duration: float, output_path: str) -> bool:
+        """Handle music generation failure by trying alternative models."""
         try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            alternative_models = ["musicgen_small", "musicgen_medium"]
+            for model_name in alternative_models:
+                if model_name != self.current_model:
+                    if self.load_model(model_name):
+                        return self.generate_music(description, model_name, output_path, duration)
             
-            sample_rate = 48000
-            frames = int(duration * sample_rate)
-            
-            silence = np.zeros((frames, 2), dtype=np.int16)
-            
-            wavfile.write(output_path, sample_rate, silence)
-            
-            logger.warning(f"Created fallback silent music: {output_path}")
-            return True
+            logger.error("All music models failed, cannot generate music")
+            return False
             
         except Exception as e:
-            logger.error(f"Error creating fallback music: {e}")
+            logger.error(f"Error in music generation failure handling: {e}")
             return False
     
     def force_cleanup_all_models(self):
