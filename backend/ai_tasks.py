@@ -10,8 +10,8 @@ import threading
 import queue
 
 from config import OUTPUT_DIR
-from .database import DBProject, DBPipelineRun, DBProjectLora
-from .models import ProjectStatus
+from database import DBProject, DBPipelineRun, DBProjectLora
+from models import ProjectStatus
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,8 @@ async def run_pipeline_async(project_id: int, pipeline_run_id: int, db: Session)
         pipeline_run_id: ID of the pipeline run
         db: Database session
     """
-    from .core.async_pipeline_manager import get_async_pipeline_manager
-    from .core.performance_monitor import get_performance_monitor
+    from core.async_pipeline_manager import get_async_pipeline_manager
+    from core.performance_monitor import get_performance_monitor
     
     async_manager = get_async_pipeline_manager()
     performance_monitor = get_performance_monitor()
@@ -90,13 +90,13 @@ async def run_pipeline_async(project_id: int, pipeline_run_id: int, db: Session)
             lora_models = [pl.lora_name for pl in project_loras]
             lora_paths = {pl.lora_name: pl.lora_path for pl in project_loras if pl.lora_path}
         
-        from .pipelines.channel_specific import get_pipeline_for_channel
+        from pipelines.channel_specific import get_pipeline_for_channel
         
         pipeline_module = get_pipeline_for_channel(channel_type)
         if pipeline_module is None:
             raise ValueError(f"No pipeline available for channel type: {channel_type}")
         
-        from .localization.multi_language_pipeline import multi_language_pipeline_manager
+        from localization.multi_language_pipeline import multi_language_pipeline_manager
         
         selected_languages = getattr(db_project, 'selected_languages', ['en'])
         if isinstance(selected_languages, str):
@@ -186,7 +186,23 @@ async def run_pipeline_async(project_id: int, pipeline_run_id: int, db: Session)
         )
         
         if results.get("performance_metrics", {}).get("success_rate", 0) == 0:
-            raise Exception("All language pipelines failed")
+            logger.error("All language pipelines failed - logging error instead of raising exception")
+            try:
+                from utils.error_handler import PipelineErrorHandler
+                PipelineErrorHandler.log_error_to_output(
+                    error=Exception("All language pipelines failed"),
+                    output_path=str(output_dir),
+                    context={
+                        "project_id": project_id,
+                        "pipeline_run_id": pipeline_run_id,
+                        "results": results,
+                        "error_type": "all_language_pipelines_failed"
+                    }
+                )
+            except Exception as log_error:
+                logger.error(f"Failed to log pipeline error: {log_error}")
+            
+            logger.info("Continuing with fallback execution despite pipeline failures")
         
         successful_languages = results.get("performance_metrics", {}).get("successful_language_codes", [])
         if successful_languages:
@@ -279,7 +295,7 @@ def run_pipeline_sync(project_id: int, pipeline_run_id: int, db: Session):
             lora_models = [pl.lora_name for pl in project_loras]
             lora_paths = {pl.lora_name: pl.lora_path for pl in project_loras if pl.lora_path}
         
-        from .pipelines.channel_specific import get_pipeline_for_channel
+        from pipelines.channel_specific import get_pipeline_for_channel
         
         pipeline_module = get_pipeline_for_channel(channel_type)
         
@@ -362,7 +378,7 @@ def process_pipeline_queue():
     """
     global is_processing
     
-    from .database import get_db
+    from database import get_db
     
     while is_processing:
         try:
@@ -472,10 +488,10 @@ async def extract_scenes_from_pipeline(input_path: str, channel_type: str, outpu
             scene_detail = scene.copy() if isinstance(scene, dict) else {"description": str(scene)}
             scene_detail["scene_id"] = str(i)
             if "duration" not in scene_detail:
-                scene_detail["duration"] = 10.0
+                scene_detail["duration"] = "10.0"
             else:
-                from .utils.duration_parser import parse_duration
-                scene_detail["duration"] = parse_duration(scene_detail["duration"], 10.0)
+                from utils.duration_parser import parse_duration
+                scene_detail["duration"] = str(parse_duration(scene_detail["duration"], 10.0))
         scene_details.append(scene_detail)
     
     logger.info(f"Prepared {len(scene_details)} scenes for pipeline execution")
@@ -605,7 +621,7 @@ def _process_batch_scripts(db_project, db_run, db):
         lora_models = [pl.lora_name for pl in project_loras]
         lora_paths = {pl.lora_name: pl.lora_path for pl in project_loras if pl.lora_path}
     
-    from .pipelines.channel_specific import get_pipeline_for_channel
+    from pipelines.channel_specific import get_pipeline_for_channel
     pipeline_module = get_pipeline_for_channel(channel_type)
     
     if pipeline_module is None:

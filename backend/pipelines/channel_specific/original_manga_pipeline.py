@@ -167,10 +167,10 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 enhanced_scenes = processed_script.get('enhanced_scenes', [])
                 print(f"LLM processed {len(enhanced_scenes)} original manga scenes with model-specific prompts")
             else:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 llm_error = Exception("LLM processing failed for original manga script")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=llm_error,
                     output_path=str(output_dir),
                     context={"channel_type": "original_manga", "script_data": script_data}
@@ -334,17 +334,17 @@ class OriginalMangaChannelPipeline(BasePipeline):
                         from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         video_error = Exception(f"Alternative video generation failed for scene {i+1}")
-                        error_handler.log_error_to_output(
+                        PipelineErrorHandler.log_error_to_output(
                             error=video_error,
                             output_path=str(scenes_dir),
                             context={"scene_text": scene_text, "scene_number": i+1, "channel_type": "original_manga"}
                         )
                         logger.error(f"Alternative video generation failed for scene {i+1}, error logged")
                 except Exception as e:
-                    from ..utils.error_handler import PipelineErrorHandler
+                    from ...utils.error_handler import PipelineErrorHandler
                     error_handler = PipelineErrorHandler()
                     video_error = Exception(f"Video generation exception for scene {i+1}: {e}")
-                    error_handler.log_error_to_output(
+                    PipelineErrorHandler.log_error_to_output(
                         error=video_error,
                         output_path=str(scenes_dir),
                         context={"scene_text": scene_text, "scene_number": i+1, "channel_type": "original_manga", "exception": str(e)}
@@ -1015,10 +1015,9 @@ class OriginalMangaChannelPipeline(BasePipeline):
         """Combine scenes into final episode with maximum quality."""
         try:
             if not scene_files:
-                from ..utils.error_handler import PipelineErrorHandler
-                error_handler = PipelineErrorHandler()
+                from ...utils.error_handler import PipelineErrorHandler
                 video_error = Exception("No scenes to combine")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=video_error,
                     output_path=os.path.dirname(output_path) if output_path else '/tmp',
                     context={
@@ -1061,10 +1060,9 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     return output_path
                 else:
                     logger.warning(f"FFmpeg combination failed: {result.stderr}")
-                    from ..utils.error_handler import PipelineErrorHandler
-                    error_handler = PipelineErrorHandler()
+                    from ...utils.error_handler import PipelineErrorHandler
                     video_error = Exception("FFmpeg combination failed")
-                    error_handler.log_error_to_output(
+                    PipelineErrorHandler.log_error_to_output(
                         error=video_error,
                         output_path=os.path.dirname(output_path) if output_path else '/tmp',
                         context={
@@ -1084,10 +1082,9 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     
         except Exception as e:
             logger.error(f"Error combining scenes: {e}")
-            from ..utils.error_handler import PipelineErrorHandler
-            error_handler = PipelineErrorHandler()
+            from ...utils.error_handler import PipelineErrorHandler
             video_error = Exception(f"Error combining scenes: {e}")
-            error_handler.log_error_to_output(
+            PipelineErrorHandler.log_error_to_output(
                 error=video_error,
                 output_path=os.path.dirname(output_path) if output_path else '/tmp',
                 context={
