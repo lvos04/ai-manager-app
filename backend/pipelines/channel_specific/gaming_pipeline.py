@@ -81,7 +81,7 @@ class GamingChannelPipeline(BasePipeline):
     def _log_video_generation_error(self, scene_file: str, scene_prompt: str, scene_num: int, error_message: str):
         """Log video generation error to output directory."""
         try:
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             
             output_dir = os.path.dirname(scene_file) if scene_file else getattr(self, 'current_output_dir', '/tmp')
             error_handler = PipelineErrorHandler()
@@ -480,7 +480,7 @@ class GamingChannelPipeline(BasePipeline):
                 
         except Exception as e:
             print(f"Error creating compilation: {e}")
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             error_handler = PipelineErrorHandler()
             compilation_error = Exception(f"Compilation error: {e}")
             error_handler.log_error_to_output(
@@ -501,7 +501,7 @@ class GamingChannelPipeline(BasePipeline):
             import cv2
             
             if not scene_files:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 no_scenes_error = Exception("No scenes generated for gaming content")
                 error_handler.log_error_to_output(
@@ -543,7 +543,7 @@ class GamingChannelPipeline(BasePipeline):
                 print(f"Combined {len(scene_files)} scenes into {total_frames} frames")
                 return output_path
             else:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 combination_error = Exception("Scene combination failed - no frames written")
                 error_handler.log_error_to_output(
@@ -560,7 +560,7 @@ class GamingChannelPipeline(BasePipeline):
                 
         except Exception as e:
             print(f"Error in scene combination: {e}")
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             error_handler = PipelineErrorHandler()
             error_handler.log_error_to_output(
                 error=e,
@@ -646,7 +646,7 @@ class GamingChannelPipeline(BasePipeline):
     def _log_gaming_content_error(self, output_dir: Path, language: str, error_message: str):
         """Log gaming content processing error to output directory."""
         try:
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             
             error_handler = PipelineErrorHandler()
             error_log_path = error_handler.log_error(
@@ -668,7 +668,7 @@ class GamingChannelPipeline(BasePipeline):
             from ..text_to_video_generator import TextToVideoGenerator
             video_generator = TextToVideoGenerator()
             
-            gaming_video = final_dir / "gaming_content.mp4"
+            gaming_video = Path("/tmp") / "gaming_content.mp4"
             success = video_generator.generate_video(
                 "Gaming content with action sequences", 
                 "animatediff_v2_sdxl", 
@@ -1008,7 +1008,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             if success:
                 print(f"Successfully generated video for scene {i}")
             else:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 video_error = Exception(f"Video generation failed for scene {i}")
                 error_handler.log_error_to_output(
@@ -1025,7 +1025,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 
         except Exception as e:
             print(f"Error generating video for scene {i}: {e}")
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             error_handler = PipelineErrorHandler()
             video_error = Exception(f"Video generation failed for scene {i}")
             error_handler.log_error_to_output(
@@ -1099,7 +1099,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     if voice_model and voice_model.get("generate"):
                         voice_success = voice_model["generate"](commentary_text, output_path=str(voice_file))
                     else:
-                        from ..utils.error_handler import PipelineErrorHandler
+                        from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         voice_error = Exception("Voice model not available for gaming commentary")
                         error_handler.log_error_to_output(
@@ -1117,7 +1117,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     if music_model and music_model.get("generate"):
                         music_success = music_model["generate"](f"Gaming action music for {scene_text}", duration=15.0, output_path=str(music_file))
                     else:
-                        from ..utils.error_handler import PipelineErrorHandler
+                        from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         music_error = Exception("Music model not available for gaming content")
                         error_handler.log_error_to_output(
@@ -1142,7 +1142,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     print(f"Generated {len(ai_shorts)} AI shorts for gaming content")
             
             else:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 video_error = Exception(f"Video generation failed for scene {i+1}")
                 error_handler.log_error_to_output(
@@ -1371,7 +1371,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     duration=10.0
                 )
                 if not success:
-                    from ..utils.error_handler import PipelineErrorHandler
+                    from ...utils.error_handler import PipelineErrorHandler
                     error_handler = PipelineErrorHandler()
                     music_error = Exception("Music generation failed for gaming content")
                     error_handler.log_error_to_output(
@@ -1385,7 +1385,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     )
                     print(f"Music generation failed, error logged to output directory")
             except Exception as inner_e:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 error_handler.log_error_to_output(
                     error=inner_e,
@@ -1440,7 +1440,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                         intro_frames = []
                         print("AnimateDiff model available but no frames generated")
                     else:
-                        from ..utils.error_handler import PipelineErrorHandler
+                        from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         intro_error = Exception("AnimateDiff model failed to generate intro frames")
                         error_handler.log_error_to_output(
@@ -1472,7 +1472,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                             intro_clip.write_videofile(str(intro_file), codec='libx264')
                             print("Created animated intro")
                         else:
-                            from ..utils.error_handler import PipelineErrorHandler
+                            from ...utils.error_handler import PipelineErrorHandler
                             error_handler = PipelineErrorHandler()
                             intro_error = Exception("No frames generated for intro sequence")
                             error_handler.log_error_to_output(

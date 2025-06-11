@@ -168,7 +168,7 @@ class AnimeChannelPipeline(BasePipeline):
                 enhanced_scenes = processed_script.get('enhanced_scenes', [])
                 print(f"LLM processed {len(enhanced_scenes)} scenes with model-specific prompts")
             else:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 llm_error = Exception("LLM script processing failed, unable to enhance scenes")
                 error_handler.log_error_to_output(
@@ -280,7 +280,7 @@ class AnimeChannelPipeline(BasePipeline):
             else:
                 scene_text = enhanced_scene if isinstance(enhanced_scene, str) else enhanced_scene.get('description', f'Scene {i+1}')
                 voice_text = enhanced_scene.get('dialogue', scene_text) if isinstance(enhanced_scene, dict) else scene_text
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 voice_error = Exception(f"LLM voice prompt generation failed for scene {i+1}")
                 error_handler.log_error_to_output(
@@ -339,7 +339,7 @@ class AnimeChannelPipeline(BasePipeline):
                 combined_music_prompt = f"anime soundtrack combining: {', '.join(set(music_prompts))}"
                 print(f"Using LLM-generated music prompts from {len(music_prompts)} scenes")
             else:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 music_error = Exception("LLM music prompt generation failed")
                 error_handler.log_error_to_output(
@@ -571,10 +571,10 @@ class AnimeChannelPipeline(BasePipeline):
             self._log_video_combination_error(f"Error combining scenes with FFmpeg: {e}", output_path)
             return None
     
-    def _log_video_combination_error(self, scene_files: List[str], output_path: str, error_message: str):
+    def _log_video_combination_error(self, error_message: str, output_path: str):
         """Log video combination error to output directory."""
         try:
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             import os
             
             output_dir = os.path.dirname(output_path) if output_path else '/tmp'
@@ -584,9 +584,7 @@ class AnimeChannelPipeline(BasePipeline):
                 error=combination_error,
                 output_path=output_dir,
                 context={
-                    "scene_files": scene_files,
                     "output_path": output_path,
-                    "scene_count": len(scene_files) if scene_files else 0,
                     "channel_type": "anime",
                     "error_details": error_message
                 }
@@ -941,7 +939,7 @@ class AnimeChannelPipeline(BasePipeline):
             
             # Log error instead of fallback generation
             try:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 video_error = Exception(f"Video generation failed for scene: {scene_description}")
                 error_handler.log_error_to_output(
@@ -963,7 +961,7 @@ class AnimeChannelPipeline(BasePipeline):
             logger.error(f"Error in scene video generation: {e}")
             # Log error instead of fallback generation
             try:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 error_handler.log_error_to_output(
                     error=e,
@@ -1023,7 +1021,7 @@ class AnimeChannelPipeline(BasePipeline):
             
             # Log error instead of fallback generation
             try:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 voice_error = Exception(f"Voice generation failed for text: {text}")
                 error_handler.log_error_to_output(
@@ -1044,7 +1042,7 @@ class AnimeChannelPipeline(BasePipeline):
             logger.error(f"Error generating voice: {e}")
             # Log error instead of fallback generation
             try:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 error_handler.log_error_to_output(
                     error=e,
@@ -1269,7 +1267,7 @@ class AnimeChannelPipeline(BasePipeline):
     def _log_video_generation_error(self, prompt: str, duration: float, output_path: str, error_message: str):
         """Log video generation error to output directory."""
         try:
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             import os
             
             output_dir = os.path.dirname(output_path) if output_path else '/tmp'
@@ -1294,7 +1292,7 @@ class AnimeChannelPipeline(BasePipeline):
     def _log_music_generation_error(self, output_path: str, error_message: str):
         """Log music generation error to output directory."""
         try:
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             import os
             
             output_dir = os.path.dirname(output_path) if output_path else '/tmp'
@@ -1406,7 +1404,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                             expanded_scene = llm_model["generate"](expansion_prompt)
                         except Exception as e:
                             logger.warning(f"LLM scene expansion failed: {e}")
-                            from ..utils.error_handler import PipelineErrorHandler
+                            from ...utils.error_handler import PipelineErrorHandler
                             error_handler = PipelineErrorHandler()
                             llm_error = Exception(f"LLM scene expansion failed: {e}")
                             error_handler.log_error_to_output(
@@ -1580,7 +1578,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             if not isinstance(anime_model, dict) or "generate" not in anime_model:
                 anime_model = {"generate": anime_model.generate if hasattr(anime_model, 'generate') else lambda **kwargs: None}
         else:
-            from ..utils.error_handler import PipelineErrorHandler
+            from ...utils.error_handler import PipelineErrorHandler
             error_handler = PipelineErrorHandler()
             model_error = Exception(f"Failed to load {base_model}")
             error_handler.log_error_to_output(
@@ -1817,7 +1815,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                         print(f"Applied lipsync for scene {i+1}")
                 
             else:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 video_error = Exception(f"Failed to generate video for scene {i+1}")
                 error_handler.log_error_to_output(
@@ -1843,7 +1841,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
         except Exception as e:
             print(f"Error generating video for scene {i+1}: {e}")
             try:
-                from ..utils.error_handler import PipelineErrorHandler
+                from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 video_error = Exception(f"Video generation failed for anime scene {i+1}")
                 error_handler.log_error_to_output(
