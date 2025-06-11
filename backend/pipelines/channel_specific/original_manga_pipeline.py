@@ -839,12 +839,12 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 if success and os.path.exists(output_path):
                     return output_path
             
-            self._log_music_generation_error("background music", 30.0, output_path, "All music generation methods failed")
+            self._log_music_generation_error(output_path, "All music generation methods failed")
             return None
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            self._log_music_generation_error("background music", 30.0, output_path, str(e))
+            self._log_music_generation_error(output_path, str(e))
             return None
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 

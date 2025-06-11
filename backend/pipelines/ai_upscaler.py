@@ -308,10 +308,10 @@ class AIUpscaler:
             
             output_dir = os.path.dirname(output_path) if output_path else '/tmp'
             error_handler = PipelineErrorHandler()
-            upscale_error = Exception(f"RealESRGAN upscaling failed: {error_message}")
-            error_handler.log_error_to_output(
-                error=upscale_error,
-                output_path=output_dir,
+            error_handler.log_error(
+                error_type="UPSCALING_FAILURE",
+                error_message=f"RealESRGAN upscaling failed: {error_message}",
+                output_dir=str(output_dir),
                 context={
                     "input_path": input_path,
                     "output_path": output_path,

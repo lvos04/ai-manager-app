@@ -1086,13 +1086,13 @@ class AnimeChannelPipeline(BasePipeline):
                         return output_path
             
             # Log error instead of fallback generation
-            self._log_music_generation_error("background music", duration, output_path, "All music models failed")
+            self._log_music_generation_error(output_path, "All music models failed")
             return None
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
             # Log error instead of fallback generation
-            self._log_music_generation_error("background music", duration, output_path, str(e))
+            self._log_music_generation_error(output_path, str(e))
             return None
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
@@ -1295,16 +1295,15 @@ class AnimeChannelPipeline(BasePipeline):
             from ...utils.error_handler import PipelineErrorHandler
             import os
             
-            output_dir = os.path.dirname(output_path) if output_path else '/tmp'
+            output_dir = os.path.dirname(output_path) if output_path else getattr(self, 'current_output_dir', '/tmp')
             error_handler = PipelineErrorHandler()
-            music_error = Exception(f"Music generation failed: {error_message}")
-            error_handler.log_error_to_output(
-                error=music_error,
-                output_path=output_dir,
+            error_handler.log_error(
+                error_type="MUSIC_GENERATION_FAILURE",
+                error_message=f"Music generation failed: {error_message}",
+                output_dir=str(output_dir),
                 context={
                     "output_path": output_path,
-                    "channel_type": "anime",
-                    "error_details": error_message
+                    "channel_type": "anime"
                 }
             )
             logger.error(f"Music generation failed for anime pipeline, error logged to output directory")
