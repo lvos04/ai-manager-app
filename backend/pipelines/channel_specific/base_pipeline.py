@@ -15,6 +15,7 @@ import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 import torch
+import shutil
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -892,7 +893,6 @@ class BasePipeline:
                         logger.warning(f"audiocraft not available: {e}")
                         self._log_music_model_error(model_type, f"audiocraft not available: {e}")
                         return None
-                        break
                     except Exception as e:
                         logger.error(f"MusicGen loading failed on attempt {retry_count + 1}: {e}")
                         retry_count += 1
@@ -1143,12 +1143,12 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                         enhanced_scene['scene_number'] = i + 1
                         enhanced_scenes.append(enhanced_scene)
                     else:
-                        self._log_llm_scene_error(scene_text, i + 1, channel_type)
+                        self._log_llm_scene_error(i + 1, f"Scene analysis failed: {scene_text}")
                         enhanced_scenes.append(None)
                         
                 except Exception as e:
                     logger.error(f"LLM scene analysis failed for scene {i+1}: {e}")
-                    self._log_llm_scene_error(scene_text, i + 1, channel_type)
+                    self._log_llm_scene_error(i + 1, str(e))
                     enhanced_scenes.append(None)
             
             processed_script = script_data.copy()
@@ -1273,62 +1273,29 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             return None
     
     def _create_efficient_video(self, prompt: str, duration: float, output_path: str) -> str:
-        """Create efficient video optimized for CPU systems."""
+        """Log video generation failure instead of creating fallback content."""
         try:
-            import cv2
-            import numpy as np
-            import math
+            from ..utils.error_handler import PipelineErrorHandler
+            import os
             
-            if not output_path:
-                output_path = f"efficient_video_{int(time.time())}.mp4"
+            output_dir = os.path.dirname(output_path) if output_path else getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            error_handler.log_error(
+                error_type="VIDEO_GENERATION_FAILURE",
+                error_message=f"Video generation failed for prompt: {prompt}",
+                output_dir=str(output_dir),
+                context={
+                    "prompt": prompt,
+                    "output_path": output_path,
+                    "duration": duration,
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"Video generation failed, error logged to output directory instead of creating fallback content")
+            return None
             
-            if isinstance(duration, (str, Path)):
-                duration = 5.0  # Default duration
-            duration = float(duration)
-            
-            fps = 24
-            max_duration = min(duration, 10.0)
-            frames = int(max_duration * fps)
-            width, height = 1920, 1080  # 16:9 aspect ratio
-            
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            base_frame = np.full((height, width, 3), [60, 80, 100], dtype=np.uint8)
-            
-            cv2.putText(base_frame, f"{self.channel_type.upper()} CONTENT", 
-                       (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 255, 255), 3)
-            cv2.putText(base_frame, prompt[:50], 
-                       (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (200, 200, 200), 2)
-            
-            for i in range(frames):
-                frame = base_frame.copy()
-                
-                t = i / fps
-                circle_x = int(width * 0.5 + 200 * math.sin(t * 2))
-                circle_y = int(height * 0.5 + 100 * math.cos(t * 3))
-                cv2.circle(frame, (circle_x, circle_y), 50, (255, 200, 100), -1)
-                
-                cv2.putText(frame, f"Frame {i+1}/{frames}", 
-                           (width - 300, height - 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-                
-                out.write(frame)
-            
-            out.release()
-            
-            if os.path.exists(output_path):
-                file_size = os.path.getsize(output_path)
-                logger.info(f"CPU-optimized video created: {output_path} ({file_size} bytes)")
-                return output_path
-            else:
-                logger.error("Failed to create efficient video")
-                self._log_video_generation_error(prompt, max_duration, output_path, "Efficient video creation failed")
-                return None
-                
         except Exception as e:
-            logger.error(f"Efficient video creation failed: {e}")
-            safe_duration = float(duration) if not isinstance(duration, (str, Path)) else 5.0
-            self._log_video_generation_error(prompt, min(safe_duration, 10.0), output_path, str(e))
+            logger.error(f"Error logging video generation failure: {e}")
             return None
     
     def _parse_prompt_for_scenes(self, prompt: str) -> List[Dict]:
@@ -1624,30 +1591,29 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 return output_path
             else:
                 logger.error(f"AI music generation failed")
-                self._log_music_generation_error(scene_description, duration, output_path, "AI music generation failed")
+                self._log_music_generation_error(output_path, "AI music generation failed")
                 return None
             
         except Exception as e:
             logger.error(f"Error in AI music generation: {e}")
-            self._log_music_generation_error(scene_description, duration, output_path, str(e))
+            self._log_music_generation_error(output_path, str(e))
             return None
     
-    def _log_music_generation_error(self, output_path: str, error_message: str, prompt: str = None):
+    def _log_music_generation_error(self, output_path: str, error_message: str):
         """Log music generation error to output directory."""
         try:
             from ..utils.error_handler import PipelineErrorHandler
             import os
             
-            output_dir = os.path.dirname(output_path) if output_path else '/tmp'
+            output_dir = os.path.dirname(output_path) if output_path else getattr(self, 'current_output_dir', '/tmp')
             error_handler = PipelineErrorHandler()
-            music_error = Exception(f"Music generation failed: {error_message}")
-            error_handler.log_error_to_output(
-                error=music_error,
-                output_path=output_dir,
+            error_handler.log_error(
+                error_type="MUSIC_GENERATION_FAILURE",
+                error_message=f"Music generation failed: {error_message}",
+                output_dir=str(output_dir),
                 context={
                     "output_path": output_path,
-                    "prompt": prompt if prompt else "background music",
-                    "error_details": error_message
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
                 }
             )
             logger.error(f"Music generation failed, error logged to output directory")

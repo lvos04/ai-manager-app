@@ -788,12 +788,12 @@ class SuperheroChannelPipeline(BasePipeline):
                 if success and os.path.exists(output_path):
                     return output_path
             
-            self._log_music_generation_error("background music", duration, output_path, "Music generation failed")
+            self._log_music_generation_error(output_path, "Music generation failed")
             return None
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            self._log_music_generation_error("background music", duration, output_path, str(e))
+            self._log_music_generation_error(output_path, str(e))
             return None
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
