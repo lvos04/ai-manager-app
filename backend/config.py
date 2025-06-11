@@ -110,6 +110,7 @@ ALL_MODEL_CATEGORIES = ["base", "lora", "video", "audio", "upscaling", "text", "
 
 POSSIBLE_MODEL_PATHS = [
     "/media/leon/NieuwVolume/AI app/models/",
+    "/media/leon/NieuwVolume/AI app/ai-manager-app/models/",
     "./models/",
     "~/models/",
     "/opt/models/"

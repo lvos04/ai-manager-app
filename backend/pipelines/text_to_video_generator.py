@@ -145,7 +145,8 @@ class TextToVideoGenerator:
             pipeline = StableVideoDiffusionPipeline.from_pretrained(
                 model_path,
                 torch_dtype=self.dtype,
-                variant="fp16" if self.dtype == torch.float16 else None
+                variant="fp16" if self.dtype == torch.float16 else None,
+                local_files_only=False
             )
             
             if self.device == "cuda":
@@ -176,14 +177,16 @@ class TextToVideoGenerator:
             
             adapter = MotionAdapter.from_pretrained(
                 "guoyww/animatediff-motion-adapter-sdxl-beta",
-                torch_dtype=self.dtype
+                torch_dtype=self.dtype,
+                local_files_only=False
             )
             
             pipeline = AnimateDiffPipeline.from_pretrained(
                 "stabilityai/stable-diffusion-xl-base-1.0",
                 motion_adapter=adapter,
                 torch_dtype=self.dtype,
-                variant="fp16" if self.dtype == torch.float16 else None
+                variant="fp16" if self.dtype == torch.float16 else None,
+                local_files_only=False
             )
             
             scheduler = DDIMScheduler.from_pretrained(

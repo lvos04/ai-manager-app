@@ -973,7 +973,7 @@ class MarvelDCChannelPipeline(BasePipeline):
                     return output_path
                 else:
                     logger.warning(f"FFmpeg combination failed: {result.stderr}")
-                    from ..utils.error_handler import PipelineErrorHandler
+                    from ...utils.error_handler import PipelineErrorHandler
                     error_handler = PipelineErrorHandler()
                     video_error = Exception(f"FFmpeg combination failed: {result.stderr}")
                     error_handler.log_error_to_output(

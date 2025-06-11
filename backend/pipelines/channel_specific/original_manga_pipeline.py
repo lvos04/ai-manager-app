@@ -331,7 +331,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     if success and os.path.exists(str(scene_file)):
                         scene_files.append(str(scene_file))
                     else:
-                        from ..utils.error_handler import PipelineErrorHandler
+                        from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         video_error = Exception(f"Alternative video generation failed for scene {i+1}")
                         error_handler.log_error_to_output(
