@@ -202,6 +202,10 @@ class AsyncPipelineManager:
             return PipelineErrorHandler.handle_pipeline_error(
                 e, "async_pipeline", project_data.get('output_path', '/tmp/pipeline_output'), project_data
             )
+    
+    async def execute_async(self, scenes_or_project_data, pipeline_config=None):
+        """Execute pipeline asynchronously - alias for execute_pipeline_async."""
+        return await self.execute_pipeline_async(scenes_or_project_data, pipeline_config)
 
 def _get_pipeline_utils():
     """Inline pipeline utilities to replace pipeline_utils."""

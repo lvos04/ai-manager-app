@@ -102,7 +102,7 @@ async def run_pipeline_async(project_id: int, pipeline_run_id: int, db: Session)
         if isinstance(selected_languages, str):
             selected_languages = [selected_languages]
         
-        scenes = await extract_scenes_from_pipeline(pipeline_module, input_path, channel_type)
+        scenes = await extract_scenes_from_pipeline(input_path, channel_type, str(output_dir))
         
         if not scenes:
             logger.warning("No scenes extracted from script, attempting to parse script directly")
