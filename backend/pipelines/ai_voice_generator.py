@@ -165,7 +165,8 @@ class AIVoiceGenerator:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load voice model: {model_name}")
-                return self._handle_voice_generation_failure(text, output_path)
+                self._log_voice_generation_error(text, output_path, f"Failed to load voice model: {model_name}")
+                return False
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -177,11 +178,13 @@ class AIVoiceGenerator:
                 return self._generate_xtts_voice(text, output_path, language, character_voice)
             else:
                 logger.error(f"Unknown voice generation method for {model_name}")
-                return self._handle_voice_generation_failure(text, output_path)
+                self._log_voice_generation_error(text, output_path, f"Unknown voice generation method for {model_name}")
+                return False
                 
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
-            return self._handle_voice_generation_failure(text, output_path)
+            self._log_voice_generation_error(text, output_path, str(e))
+            return False
     
     def _generate_bark_voice(self, text: str, output_path: str, language: str, character_voice: str) -> bool:
         """Generate voice using Bark."""
@@ -439,21 +442,28 @@ class AIVoiceGenerator:
         except Exception as e:
             logger.error(f"Error in pydub audio combination: {e}")
     
-    def _handle_voice_generation_failure(self, text: str, output_path: str) -> bool:
-        """Handle voice generation failure by trying alternative models."""
+    def _log_voice_generation_error(self, text: str, output_path: str, error_message: str):
+        """Log voice generation error to output directory."""
         try:
-            alternative_models = ["bark", "xtts"]
-            for model_name in alternative_models:
-                if model_name != self.current_model:
-                    if self.load_model(model_name):
-                        return self.generate_voice(text, output_path)
+            from ..utils.error_handler import PipelineErrorHandler
+            import os
             
-            logger.error("All voice models failed, cannot generate audio")
-            return False
+            output_dir = os.path.dirname(output_path) if output_path else '/tmp'
+            error_handler = PipelineErrorHandler()
+            voice_error = Exception(f"Voice generation failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=voice_error,
+                output_path=output_dir,
+                context={
+                    "text": text[:100] + "..." if len(text) > 100 else text,
+                    "output_path": output_path,
+                    "error_details": error_message
+                }
+            )
+            logger.error(f"Voice generation failed, error logged to output directory")
             
         except Exception as e:
-            logger.error(f"Error in voice generation failure handling: {e}")
-            return False
+            logger.error(f"Error logging voice generation failure: {e}")
     
     def force_cleanup_all_models(self):
         """Force cleanup of all loaded voice models."""

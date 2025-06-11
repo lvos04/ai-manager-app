@@ -77,7 +77,8 @@ class BasePipeline:
             if scene_videos:
                 self._combine_scene_videos(scene_videos, str(final_video))
             else:
-                self._handle_video_generation_failure("Default content", 300.0, str(final_video))
+                # Log error instead of fallback generation
+                self._log_video_generation_error("Default content", 300.0, str(final_video), "No scene videos generated")
             
             self.create_manifest(output_dir, 
                                scenes_generated=len(scene_videos),
@@ -185,12 +186,49 @@ class BasePipeline:
             
             if not video_paths:
                 logger.warning("No video paths provided for combination")
-                return self._handle_video_generation_failure("Combined scenes", 300.0, output_path)
+                try:
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    video_error = Exception("No video paths provided for combination")
+                    error_handler.log_error_to_output(
+                        error=video_error,
+                        output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                        context={
+                            "prompt": "Combined scenes",
+                            "duration": 300.0,
+                            "output_path": output_path,
+                            "channel_type": getattr(self, 'channel_type', 'unknown'),
+                            "error_details": "No video paths provided for combination"
+                        }
+                    )
+                    logger.error("Video combination failed, error logged to output directory")
+                except Exception as e:
+                    logger.error(f"Error logging video combination failure: {e}")
+                return None
             
             valid_videos = [path for path in video_paths if os.path.exists(path)]
             if not valid_videos:
                 logger.warning("No valid video files found for combination")
-                return self._handle_video_generation_failure("Combined scenes", 300.0, output_path)
+                try:
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    video_error = Exception("No valid video files found for combination")
+                    error_handler.log_error_to_output(
+                        error=video_error,
+                        output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                        context={
+                            "prompt": "Combined scenes",
+                            "duration": 300.0,
+                            "output_path": output_path,
+                            "channel_type": getattr(self, 'channel_type', 'unknown'),
+                            "error_details": "No valid video files found for combination",
+                            "video_paths": video_paths
+                        }
+                    )
+                    logger.error("Video combination failed, error logged to output directory")
+                except Exception as e:
+                    logger.error(f"Error logging video combination failure: {e}")
+                return None
             
             logger.info(f"Combining {len(valid_videos)} scene videos using FFmpeg")
             
@@ -275,7 +313,8 @@ class BasePipeline:
                 
         except Exception as e:
             logger.error(f"MoviePy video combination failed: {e}")
-            return self._handle_video_generation_failure("Combined scenes", 300.0, output_path)
+            self._log_video_combination_error(str(e), output_path)
+            return None
     
     def _initialize_language_support(self):
         """Initialize supported languages configuration."""
@@ -324,9 +363,24 @@ class BasePipeline:
                 from ..model_manager import TEXT_MODELS, HF_MODEL_REPOS
                 model_info = TEXT_MODELS.get(model_name)
                 if not model_info:
-                    logger.warning(f"Model {model_name} not found, using fallback")
-                    model_name = "dialogpt_medium"
-                    model_info = TEXT_MODELS.get(model_name)
+                    try:
+                        from ..utils.error_handler import PipelineErrorHandler
+                        error_handler = PipelineErrorHandler()
+                        model_error = Exception(f"Model {model_name} not found in TEXT_MODELS")
+                        error_handler.log_error_to_output(
+                            error=model_error,
+                            output_path=getattr(self, 'current_output_dir', '/tmp'),
+                            context={
+                                "model_name": model_name,
+                                "channel_type": getattr(self, 'channel_type', 'unknown'),
+                                "error_details": f"Model {model_name} not found in TEXT_MODELS"
+                            }
+                        )
+                        logger.error(f"Model {model_name} not found, error logged to output directory")
+                        return None
+                    except Exception as e:
+                        logger.error(f"Error logging model loading failure: {e}")
+                        return None
                 
                 model_id = model_info.get("model_id", "microsoft/DialoGPT-medium")
             except ImportError:
@@ -413,48 +467,29 @@ class BasePipeline:
             self.models["llm"] = None
             return self.models["llm"]
     
-    def _handle_music_generation_failure(self, prompt: str, duration: float, output_path: str) -> bool:
-        """Handle music generation failure by trying alternative models."""
-        try:
-            from ..ai_music_generator import AIMusicGenerator
-            music_generator = AIMusicGenerator(vram_tier=self.vram_tier)
-            
-            alternative_models = ["musicgen_small", "musicgen_medium"]
-            for model_name in alternative_models:
-                if music_generator.load_model(model_name):
-                    return music_generator.generate_music(prompt, model_name, output_path, duration)
-            
-            logger.error("All music models failed, cannot generate music")
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error in music generation failure handling: {e}")
-            return False
-    def _handle_llm_generation_failure(self, prompt: str, max_tokens: int = 100) -> str:
-        """Handle LLM generation failure by trying alternative models."""
-        try:
-            alternative_models = ["deepseek", "llama", "mistral"]
-            for model_name in alternative_models:
-                try:
-                    llm_model = self.load_llm_model(model_name)
-                    if llm_model and llm_model.get("generate"):
-                        result = llm_model["generate"](prompt, max_tokens=max_tokens)
-                        if result and len(result.strip()) > 10:
-                            logger.info(f"Successfully generated text with alternative LLM: {model_name}")
-                            return result
-                except Exception as e:
-                    logger.warning(f"Alternative LLM model {model_name} failed: {e}")
-                    continue
-            
-            logger.error("All LLM models failed, cannot generate text")
-            return prompt
-            
-        except Exception as e:
-            logger.error(f"Error in LLM generation failure handling: {e}")
-            return prompt
-    
 
-            return ""
+    def _log_llm_content_error(self, prompt: str, max_tokens: int, error_message: str):
+        """Log LLM content generation error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            llm_error = Exception(f"LLM content generation failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=llm_error,
+                output_path=str(output_dir),
+                context={
+                    "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                    "max_tokens": max_tokens,
+                    "attempted_models": ["deepseek", "llama", "mistral"],
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"LLM content generation failed, error logged to output directory")
+            
+        except Exception as e:
+            logger.error(f"Error logging LLM content failure: {e}")
     
     def _generate_with_llm(self, model, tokenizer, prompt: str, max_tokens: int = 100) -> str:
         """Generate text using loaded LLM model with thread-safe timeout protection."""
@@ -522,14 +557,14 @@ class BasePipeline:
                                 response = response.strip() + '!'
                         
                         if len(response) < 5 or response.lower() in ['title', 'description', 'content', 'your name, your profile picture and more']:
-                            result_queue.put(self._generate_fallback_content_for_prompt(prompt))
+                            result_queue.put(None)
                         else:
-                            result_queue.put(response[:200])  # Reasonable max length
+                            result_queue.put(response[:200])
                     else:
-                        result_queue.put(self._generate_fallback_content_for_prompt(prompt))
+                        result_queue.put(None)
                         
                 except Exception as e:
-                    result_queue.put(self._generate_fallback_content_for_prompt(prompt))
+                    result_queue.put(None)
             
             worker_thread = threading.Thread(target=llm_worker)
             worker_thread.daemon = True
@@ -537,30 +572,41 @@ class BasePipeline:
             
             try:
                 result = result_queue.get(timeout=30)
+                if result is None:
+                    self._log_llm_generation_error(prompt, "LLM generation returned invalid response")
                 return result
             except queue.Empty:
                 timeout_occurred.set()
-                logger.warning("LLM generation timed out, using fallback")
-                return self._generate_fallback_content_for_prompt(prompt)
+                logger.warning("LLM generation timed out")
+                self._log_llm_generation_error(prompt, f"LLM generation timed out after 30 seconds")
+                return None
             
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
-            return self._generate_fallback_content_for_prompt(prompt)
+            self._log_llm_generation_error(prompt, str(e))
+            return None
     
-    def _handle_llm_content_failure(self, prompt: str) -> str:
-        """Handle LLM content failure by attempting alternative models."""
+    def _log_llm_generation_error(self, prompt: str, error_message: str):
+        """Log LLM generation error to output directory."""
         try:
-            alternative_models = ["deepseek_llama_8b_peft", "llama_7b", "mistral_7b"]
-            for model_name in alternative_models:
-                if self.load_llm_model(model_name):
-                    return self._generate_with_llm(prompt, max_tokens=100)
+            from ..utils.error_handler import PipelineErrorHandler
             
-            logger.error("All LLM models failed, cannot generate content")
-            return f"LLM generation failed for: {prompt[:50]}..."
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            llm_error = Exception(f"LLM generation failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=llm_error,
+                output_path=str(output_dir),
+                context={
+                    "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                    "error_details": error_message,
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"LLM generation failed, error logged to output directory")
             
         except Exception as e:
-            logger.error(f"Error in LLM content failure handling: {e}")
-            return f"LLM processing error for: {prompt[:50]}..."
+            logger.error(f"Error logging LLM failure: {e}")
     
     def _load_video_model(self, model_name: Optional[str] = None):
         """Load video generation model."""
@@ -653,7 +699,22 @@ class BasePipeline:
                                     return True
                                     
                             except Exception as e:
-                                logger.error(f"AI video generation failed: {e}, using fallback")
+                                try:
+                                    from ..utils.error_handler import PipelineErrorHandler
+                                    error_handler = PipelineErrorHandler()
+                                    video_error = Exception(f"AI video generation failed: {e}")
+                                    error_handler.log_error_to_output(
+                                        error=video_error,
+                                        output_path=getattr(self, 'current_output_dir', '/tmp'),
+                                        context={
+                                            "duration": duration,
+                                            "channel_type": getattr(self, 'channel_type', 'unknown'),
+                                            "error_details": f"AI video generation failed: {e}"
+                                        }
+                                    )
+                                    logger.error("AI video generation failed, error logged to output directory")
+                                except Exception as log_error:
+                                    logger.error(f"Error logging video generation failure: {log_error}")
                         
                         duration = min(duration, 5.0)
                         fps = 24
@@ -730,8 +791,9 @@ class BasePipeline:
                     logger.info("Bark model loaded successfully")
                     
                 except Exception as e:
-                    logger.warning(f"Bark loading failed: {e}. Using fallback audio generation.")
-                    logger.error("Failed to load Bark model, no fallback available")
+                    logger.warning(f"Bark loading failed: {e}")
+                    self._log_voice_model_error("bark", str(e))
+                    logger.error("Failed to load Bark model")
                     return None
             elif model_type == "xtts":
                 retry_count = 0
@@ -753,13 +815,43 @@ class BasePipeline:
                         logger.error(f"XTTS import failed on attempt {retry_count + 1}: {e}")
                         retry_count += 1
                         if retry_count >= max_retries:
-                            logger.error("Failed to load XTTS after all retries, using fallback")
+                            try:
+                                from ..utils.error_handler import PipelineErrorHandler
+                                error_handler = PipelineErrorHandler()
+                                xtts_error = Exception("Failed to load XTTS after all retries")
+                                error_handler.log_error_to_output(
+                                    error=xtts_error,
+                                    output_path=getattr(self, 'current_output_dir', '/tmp'),
+                                    context={
+                                        "model_type": "xtts",
+                                        "channel_type": getattr(self, 'channel_type', 'unknown'),
+                                        "error_details": "Failed to load XTTS after all retries"
+                                    }
+                                )
+                                logger.error("XTTS loading failed, error logged to output directory")
+                            except Exception as log_error:
+                                logger.error(f"Error logging XTTS failure: {log_error}")
                             return None
                     except Exception as e:
                         logger.error(f"XTTS loading failed on attempt {retry_count + 1}: {e}")
                         retry_count += 1
                         if retry_count >= max_retries:
-                            logger.error("Failed to load XTTS after all retries, using fallback")
+                            try:
+                                from ..utils.error_handler import PipelineErrorHandler
+                                error_handler = PipelineErrorHandler()
+                                xtts_error = Exception("Failed to load XTTS after all retries")
+                                error_handler.log_error_to_output(
+                                    error=xtts_error,
+                                    output_path=getattr(self, 'current_output_dir', '/tmp'),
+                                    context={
+                                        "model_type": "xtts",
+                                        "channel_type": getattr(self, 'channel_type', 'unknown'),
+                                        "error_details": "Failed to load XTTS after all retries"
+                                    }
+                                )
+                                logger.error("XTTS loading failed, error logged to output directory")
+                            except Exception as log_error:
+                                logger.error(f"Error logging XTTS failure: {log_error}")
                             return None
             else:
                 logger.warning(f"Unknown voice model: {model_type}")
@@ -770,10 +862,8 @@ class BasePipeline:
                 
         except Exception as e:
             logger.error(f"Critical failure loading voice model {model_type}: {e}")
-            logger.info("Attempting emergency fallback voice generation")
-            logger.error("Voice model failed to load, no fallback available")
+            self._log_voice_model_error(model_type, str(e))
             return None
-            return self.models[model_key]
     
     def load_music_model(self, model_type: str = "musicgen"):
         """Load music generation model."""
@@ -799,23 +889,30 @@ class BasePipeline:
                         logger.info(f"Successfully loaded MusicGen model on attempt {retry_count + 1}")
                         break
                     except ImportError as e:
-                        logger.warning(f"audiocraft not available: {e}. Using fallback music generation.")
-                        self.models[model_key] = {
-                            "type": "fallback", 
-                            "loaded": True,
-                            "generate": lambda **kwargs: self._generate_fallback_music(
-                                descriptions=kwargs.get('descriptions', []),
-                                duration=kwargs.get('duration', 30.0),
-                                prompt=kwargs.get('prompt', None)
-                            )
-                        }
+                        logger.warning(f"audiocraft not available: {e}")
+                        self._log_music_model_error(model_type, f"audiocraft not available: {e}")
+                        return None
                         break
                     except Exception as e:
                         logger.error(f"MusicGen loading failed on attempt {retry_count + 1}: {e}")
                         retry_count += 1
                         if retry_count >= max_retries:
-                            logger.error("Failed to load MusicGen after all retries, using fallback")
-                            logger.error("MusicGen failed to load after all retries, no fallback available")
+                            try:
+                                from ..utils.error_handler import PipelineErrorHandler
+                                error_handler = PipelineErrorHandler()
+                                musicgen_error = Exception("Failed to load MusicGen after all retries")
+                                error_handler.log_error_to_output(
+                                    error=musicgen_error,
+                                    output_path=getattr(self, 'current_output_dir', '/tmp'),
+                                    context={
+                                        "model_type": "musicgen",
+                                        "channel_type": getattr(self, 'channel_type', 'unknown'),
+                                        "error_details": "Failed to load MusicGen after all retries"
+                                    }
+                                )
+                                logger.error("MusicGen loading failed, error logged to output directory")
+                            except Exception as log_error:
+                                logger.error(f"Error logging MusicGen failure: {log_error}")
                             return None
             else:
                 logger.warning(f"Unknown music model: {model_type}")
@@ -826,10 +923,8 @@ class BasePipeline:
                 
         except Exception as e:
             logger.error(f"Critical failure loading music model {model_type}: {e}")
-            logger.info("Attempting emergency fallback music generation")
-            logger.error("Critical failure loading music model, no fallback available")
+            self._log_music_model_error(model_type, str(e))
             return None
-            return self.models[model_key]
     def _musicgen_generate_wrapper(self, model, **kwargs):
         """Wrapper for MusicGen generation that handles tensor conversion."""
         try:
@@ -870,7 +965,8 @@ class BasePipeline:
         
         llm = self.load_llm_model()
         if not llm:
-            return self._expand_script_fallback(script_data, min_duration)
+            self._log_script_expansion_error("LLM not available for script expansion", script_data)
+            return script_data
         
         try:
             scenes = script_data.get('scenes', [])
@@ -897,7 +993,8 @@ class BasePipeline:
             
         except Exception as e:
             logger.error(f"LLM script expansion failed: {e}")
-            return self._expand_script_fallback(script_data, min_duration)
+            self._log_script_expansion_error(str(e), script_data)
+            return script_data
         finally:
             if 'llm' in self.models and self.models['llm']:
                 try:
@@ -905,39 +1002,27 @@ class BasePipeline:
                 except Exception as e:
                     logger.error(f"Error during model cleanup: {e}")
     
-    def _expand_script_fallback(self, script_data: Dict, min_duration: float) -> Dict:
-        """Fallback script expansion without LLM."""
-        scenes = script_data.get('scenes', [])
-        if not scenes:
-            scenes = self._get_default_scenes()
-        
-        target_duration = min_duration * 60
-        current_duration = sum(scene.get('duration', 5.0) if isinstance(scene, dict) else 5.0 for scene in scenes)
-        
-        expanded_scenes = []
-        for i, scene in enumerate(scenes):
-            if isinstance(scene, dict):
-                expanded_scene = scene.copy()
-                original_desc = scene.get('description', f'Scene {i+1}')
-                expanded_scene['description'] = f"Enhanced {original_desc} with detailed character development, dynamic action sequences, and immersive {self.channel_type} atmosphere"
-                
-                if current_duration < target_duration:
-                    multiplier = target_duration / max(current_duration, 1.0)
-                    expanded_scene['duration'] = scene.get('duration', 5.0) * multiplier
-                else:
-                    expanded_scene['duration'] = scene.get('duration', 5.0)
-            else:
-                expanded_scene = {
-                    'description': f"Enhanced Scene {i+1}: {scene} with detailed character development, dynamic action sequences, and immersive {self.channel_type} atmosphere",
-                    'duration': 5.0 * (target_duration / max(current_duration, 1.0) if current_duration < target_duration else 1.0)
-                }
+    def _log_script_expansion_error(self, error_message: str, script_data: Dict):
+        """Log script expansion error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
             
-            expanded_scenes.append(expanded_scene)
-        
-        script_data['scenes'] = expanded_scenes
-        script_data['expanded'] = True
-        logger.info(f"Fallback script expansion completed for {len(expanded_scenes)} scenes")
-        return script_data
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            error_log_path = error_handler.log_error(
+                error_type="SCRIPT_EXPANSION_FAILURE",
+                error_message=f"Script expansion failed: {error_message}",
+                output_dir=str(output_dir),
+                context={
+                    "script_data": script_data,
+                    "channel_type": getattr(self, 'channel_type', 'unknown'),
+                    "scenes_count": len(script_data.get('scenes', []))
+                }
+            )
+            logger.error(f"Script expansion failed, error logged to: {error_log_path}")
+            
+        except Exception as e:
+            logger.error(f"Error logging script expansion failure: {e}")
     
     def generate_combat_scene(self, scene_description: str, duration: float, characters: List[Dict], 
                             style: Optional[str] = None, difficulty: str = "medium") -> Dict:
@@ -989,8 +1074,9 @@ class BasePipeline:
         try:
             llm_model = self.load_llm_model()
             if not llm_model or not llm_model.get("generate"):
-                logger.warning("LLM not available, using fallback processing")
-                return self._fallback_script_processing(script_data, channel_type)
+                logger.warning("LLM not available for script processing")
+                self._log_script_processing_error("LLM not available", script_data, channel_type)
+                return script_data
             
             enhanced_scenes = []
             scenes = script_data.get('scenes', [])
@@ -1036,7 +1122,14 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 try:
                     llm_response = llm_model["generate"](analysis_prompt, max_tokens=500)
                     if not llm_response or len(llm_response.strip()) < 10:
-                        llm_response = self._handle_llm_generation_failure(analysis_prompt, 500)
+                        from ..utils.error_handler import PipelineErrorHandler
+                        error_handler = PipelineErrorHandler()
+                        error_handler.log_error_to_output(
+                            error=Exception("LLM analysis generation failed"),
+                            output_path=getattr(self, 'current_output_dir', '/tmp'),
+                            context={"prompt": analysis_prompt[:100], "max_tokens": 500}
+                        )
+                        llm_response = "Analysis failed - unable to process script content"
                     
                     import json
                     import re
@@ -1049,11 +1142,13 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                         enhanced_scene['scene_number'] = i + 1
                         enhanced_scenes.append(enhanced_scene)
                     else:
-                        enhanced_scenes.append(self._handle_llm_scene_failure(scene_text, i + 1, channel_type))
+                        self._log_llm_scene_error(scene_text, i + 1, channel_type)
+                        enhanced_scenes.append(None)
                         
                 except Exception as e:
                     logger.error(f"LLM scene analysis failed for scene {i+1}: {e}")
-                    enhanced_scenes.append(self._handle_llm_scene_failure(scene_text, i + 1, channel_type))
+                    self._log_llm_scene_error(scene_text, i + 1, channel_type)
+                    enhanced_scenes.append(None)
             
             processed_script = script_data.copy()
             processed_script['enhanced_scenes'] = enhanced_scenes
@@ -1064,7 +1159,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Script processing with LLM failed: {e}")
-            return self._fallback_script_processing(script_data, channel_type)
+            self._log_script_processing_error(str(e), script_data, channel_type)
+            return script_data
     
     def _enhance_scene_for_channel(self, scene_analysis: Dict, channel_type: str) -> Dict:
         """Add channel-specific enhancements to LLM scene analysis."""
@@ -1091,56 +1187,50 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         
         return scene_analysis
     
-    def _handle_llm_scene_failure(self, scene_text: str, scene_number: int, channel_type: str) -> Dict:
-        """Handle LLM scene processing failure by attempting alternative approaches."""
+    def _log_llm_scene_failure(self, scene_text: str, scene_number: int, channel_type: str, output_path: str = None):
+        """Log LLM scene processing failure to output directory."""
         try:
-            logger.warning(f"LLM scene processing failed for scene {scene_number}, using basic analysis")
+            from ..utils.error_handler import PipelineErrorHandler
             
-            # Extract basic information from scene text
-            duration = 10.0
-            if "long" in scene_text.lower() or "extended" in scene_text.lower():
-                duration = 15.0
-            elif "short" in scene_text.lower() or "brief" in scene_text.lower():
-                duration = 8.0
-            
-            scene_type = "dialogue"
-            if any(word in scene_text.lower() for word in ["fight", "battle", "combat", "action"]):
-                scene_type = "action"
-            elif any(word in scene_text.lower() for word in ["peaceful", "calm", "quiet", "serene"]):
-                scene_type = "ambient"
-            
-            return {
-                "scene_number": scene_number,
-                "original_description": scene_text,
-                "video_prompt": f"high quality {channel_type} {scene_type} scene, {scene_text}, detailed animation, professional quality",
-                "voice_prompt": scene_text,
-                "music_prompt": f"{channel_type} {scene_type} background music, atmospheric",
-                "scene_type": scene_type,
-                "visual_elements": ["characters", "environment", "lighting"],
-                "audio_elements": ["dialogue", "background_music", "ambient_sounds"],
-                "duration": duration,
-                "quality_keywords": ["high_quality", "detailed", "professional", scene_type],
-                "llm_processed": False
-            }
+            output_dir = output_path if output_path else '/tmp'
+            error_handler = PipelineErrorHandler()
+            llm_error = Exception(f"LLM scene processing failed for scene {scene_number}")
+            error_handler.log_error_to_output(
+                error=llm_error,
+                output_path=output_dir,
+                context={
+                    "scene_text": scene_text[:100] + "..." if len(scene_text) > 100 else scene_text,
+                    "scene_number": scene_number,
+                    "channel_type": channel_type,
+                    "component": "LLM_scene_processing"
+                }
+            )
+            logger.error(f"LLM scene processing failed for scene {scene_number}, error logged to output directory")
             
         except Exception as e:
-            logger.error(f"Error in LLM scene failure handling: {e}")
-            return None
+            logger.error(f"Error logging LLM scene failure: {e}")
     
-    def _fallback_script_processing(self, script_data: Dict, channel_type: str) -> Dict:
-        """Fallback processing when LLM is not available."""
-        scenes = script_data.get('scenes', [])
-        enhanced_scenes = []
-        
-        for i, scene in enumerate(scenes):
-            scene_text = scene if isinstance(scene, str) else scene.get('description', f'Scene {i+1}')
-            enhanced_scenes.append(self._handle_llm_scene_failure(scene_text, i + 1, channel_type))
-        
-        processed_script = script_data.copy()
-        processed_script['enhanced_scenes'] = enhanced_scenes
-        processed_script['llm_processed'] = False
-        
-        return processed_script
+    def _log_script_processing_error(self, error_message: str, script_data: Dict, channel_type: str):
+        """Log script processing error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            error_log_path = error_handler.log_error(
+                error_type="SCRIPT_PROCESSING_FAILURE",
+                error_message=f"Script processing failed: {error_message}",
+                output_dir=str(output_dir),
+                context={
+                    "script_data": script_data,
+                    "channel_type": channel_type,
+                    "scenes_count": len(script_data.get('scenes', []))
+                }
+            )
+            logger.error(f"Script processing failed, error logged to: {error_log_path}")
+            
+        except Exception as e:
+            logger.error(f"Error logging script processing failure: {e}")
     
     def generate_video(self, prompt: str, duration: float = 5.0, output_path: Optional[str] = None) -> Optional[str]:
         """Generate video using real AI models."""
@@ -1178,8 +1268,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Error in AI video generation: {e}")
-            logger.error("AI video generation failed, attempting alternative models")
-            return self._handle_video_generation_failure(prompt, duration, output_path)
+            self._log_video_generation_error(prompt, duration, output_path, str(e))
+            return None
     
     def _create_efficient_video(self, prompt: str, duration: float, output_path: str) -> str:
         """Create efficient video optimized for CPU systems."""
@@ -1231,12 +1321,14 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 return output_path
             else:
                 logger.error("Failed to create efficient video")
-                return self._handle_video_generation_failure(prompt, max_duration, output_path)
+                self._log_video_generation_error(prompt, max_duration, output_path, "Efficient video creation failed")
+                return None
                 
         except Exception as e:
             logger.error(f"Efficient video creation failed: {e}")
             safe_duration = float(duration) if not isinstance(duration, (str, Path)) else 5.0
-            return self._handle_video_generation_failure(prompt, min(safe_duration, 10.0), output_path)
+            self._log_video_generation_error(prompt, min(safe_duration, 10.0), output_path, str(e))
+            return None
     
     def _parse_prompt_for_scenes(self, prompt: str) -> List[Dict]:
         """Parse prompt to extract scene information."""
@@ -1399,32 +1491,29 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             y_pos = 50 + i * 40
             cv2.putText(frame, text, (50, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
     
-    def _handle_video_generation_failure(self, prompt: str, duration: float, output_path: str) -> str:
-        """Handle video generation failure by trying alternative models."""
+    def _log_video_generation_error(self, prompt: str, duration: float, output_path: str, error_message: str):
+        """Log video generation error to output directory."""
         try:
-            alternative_models = ["zeroscope", "stable_video_diffusion", "animatediff"]
-            for model_name in alternative_models:
-                try:
-                    video_model = self._load_video_model(model_name)
-                    if video_model and hasattr(video_model, 'generate_video'):
-                        success = video_model.generate_video(
-                            prompt=prompt,
-                            duration=duration,
-                            output_path=output_path
-                        )
-                        if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
-                            logger.info(f"Successfully generated video with alternative model: {model_name}")
-                            return output_path
-                except Exception as e:
-                    logger.warning(f"Alternative model {model_name} failed: {e}")
-                    continue
+            from ..utils.error_handler import PipelineErrorHandler
+            import os
             
-            logger.error("All video models failed, cannot generate video")
-            return output_path
+            output_dir = os.path.dirname(output_path) if output_path else '/tmp'
+            error_handler = PipelineErrorHandler()
+            video_error = Exception(f"Video generation failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=video_error,
+                output_path=output_dir,
+                context={
+                    "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                    "duration": duration,
+                    "output_path": output_path,
+                    "error_details": error_message
+                }
+            )
+            logger.error(f"Video generation failed, error logged to output directory")
             
         except Exception as e:
-            logger.error(f"Error in video generation failure handling: {e}")
-            return output_path
+            logger.error(f"Error logging video generation failure: {e}")
     
     def generate_voice(self, text: str, character_voice: str = "default", output_path: str = "", language: str = "en") -> str:
         """Generate voice audio using real AI models."""
@@ -1453,35 +1542,58 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 logger.info(f"AI voice generated successfully: {output_path}")
                 return output_path
             else:
-                logger.error(f"AI voice generation failed, attempting alternative models")
-                return self._handle_voice_generation_failure(text, output_path)
+                logger.error(f"AI voice generation failed")
+                self._log_voice_generation_error(text, output_path, "AI voice generation failed")
+                return None
             
         except Exception as e:
             logger.error(f"Error in AI voice generation: {e}")
-            return self._handle_voice_generation_failure(text, output_path)
+            self._log_voice_generation_error(text, output_path, str(e))
+            return None
     
-    def _handle_voice_generation_failure(self, text: str, output_path: str) -> str:
-        """Handle voice generation failure by trying alternative models."""
+    def _log_voice_generation_error(self, text: str, output_path: str, error_message: str):
+        """Log voice generation error to output directory."""
         try:
-            alternative_models = ["bark", "xtts", "tortoise"]
-            for model_name in alternative_models:
-                try:
-                    voice_model = self.load_voice_model(model_name)
-                    if voice_model and voice_model.get("generate"):
-                        success = voice_model["generate"](text, output_path=output_path)
-                        if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
-                            logger.info(f"Successfully generated voice with alternative model: {model_name}")
-                            return output_path
-                except Exception as e:
-                    logger.warning(f"Alternative voice model {model_name} failed: {e}")
-                    continue
+            from ..utils.error_handler import PipelineErrorHandler
             
-            logger.error("All voice models failed, cannot generate audio")
-            return output_path
+            output_dir = os.path.dirname(output_path) if output_path else getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            voice_error = Exception(f"Voice generation failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=voice_error,
+                output_path=str(output_dir),
+                context={
+                    "text": text[:100] + "..." if len(text) > 100 else text,
+                    "output_path": output_path,
+                    "attempted_models": ["bark", "xtts", "tortoise"],
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"Voice generation failed, error logged to output directory")
             
         except Exception as e:
-            logger.error(f"Error in voice generation failure handling: {e}")
-            return output_path
+            logger.error(f"Error logging voice generation failure: {e}")
+    
+    def _log_voice_model_error(self, model_type: str, error_message: str):
+        """Log voice model loading error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            voice_model_error = Exception(f"Voice model loading failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=voice_model_error,
+                output_path=str(output_dir),
+                context={
+                    "model_type": model_type,
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"Voice model loading failed, error logged to output directory")
+            
+        except Exception as e:
+            logger.error(f"Error logging voice model failure: {e}")
     
     def generate_background_music(self, scene_description: str, duration: float = 30.0, output_path: str = "", scene_type: str = "default") -> str:
         """Generate background music using real AI models."""
@@ -1510,37 +1622,37 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 logger.info(f"AI music generated successfully: {output_path}")
                 return output_path
             else:
-                logger.error(f"AI music generation failed, creating fallback")
-                return self._handle_music_generation_failure(scene_description, duration, output_path)
+                logger.error(f"AI music generation failed")
+                self._log_music_generation_error(scene_description, duration, output_path, "AI music generation failed")
+                return None
             
         except Exception as e:
             logger.error(f"Error in AI music generation: {e}")
-            return self._handle_music_generation_failure(scene_description, duration, output_path)
+            self._log_music_generation_error(scene_description, duration, output_path, str(e))
+            return None
     
-    def _handle_music_generation_failure(self, description: str = None, duration: float = 30.0, output_path: str = "", prompt: str = None) -> str:
-        """Handle music generation failure by trying alternative models."""
+    def _log_music_generation_error(self, output_path: str, error_message: str, prompt: str = None):
+        """Log music generation error to output directory."""
         try:
-            alternative_models = ["musicgen_small", "musicgen_medium", "musicgen_large"]
-            music_prompt = description or prompt or "background music"
+            from ..utils.error_handler import PipelineErrorHandler
+            import os
             
-            for model_name in alternative_models:
-                try:
-                    music_model = self.load_music_model(model_name)
-                    if music_model and music_model.get("generate"):
-                        success = music_model["generate"](music_prompt, duration=duration, output_path=output_path)
-                        if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
-                            logger.info(f"Successfully generated music with alternative model: {model_name}")
-                            return output_path
-                except Exception as e:
-                    logger.warning(f"Alternative music model {model_name} failed: {e}")
-                    continue
+            output_dir = os.path.dirname(output_path) if output_path else '/tmp'
+            error_handler = PipelineErrorHandler()
+            music_error = Exception(f"Music generation failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=music_error,
+                output_path=output_dir,
+                context={
+                    "output_path": output_path,
+                    "prompt": prompt if prompt else "background music",
+                    "error_details": error_message
+                }
+            )
+            logger.error(f"Music generation failed, error logged to output directory")
             
-            logger.error("All music models failed, cannot generate music")
-            return output_path if output_path else ""
-                
         except Exception as e:
-            logger.error(f"Error in music generation failure handling: {e}")
-            return output_path if output_path else ""
+            logger.error(f"Error logging music generation failure: {e}")
     
     def cleanup_models(self):
         """Clean up loaded models to free memory."""
@@ -1622,12 +1734,14 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
             if not os.path.exists(video_path):
                 logger.warning(f"Video file not found: {video_path}")
-                return self._handle_highlight_extraction_failure(num_highlights)
+                self._log_highlight_extraction_error(f"Video file not found: {video_path}", num_highlights)
+                return []
             
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
                 logger.error(f"Could not open video: {video_path}")
-                return self._handle_highlight_extraction_failure(num_highlights)
+                self._log_highlight_extraction_error(f"Could not open video: {video_path}", num_highlights)
+                return []
             
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -1636,7 +1750,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if duration < 15:
                 logger.warning(f"Video too short for highlights: {duration}s")
                 cap.release()
-                return self._handle_highlight_extraction_failure(num_highlights)
+                self._log_highlight_extraction_error(f"Video too short for highlights: {duration}s", num_highlights)
+                return []
             
             highlights = []
             segment_duration = 15
@@ -1663,7 +1778,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             cap.release()
             
             if not motion_scores:
-                return self._handle_highlight_extraction_failure(num_highlights)
+                self._log_highlight_extraction_error("No motion scores calculated", num_highlights)
+                return []
             
             motion_scores.sort(key=lambda x: x[1], reverse=True)
             
@@ -1683,33 +1799,29 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Error extracting highlights: {e}")
-            return self._handle_highlight_extraction_failure(num_highlights)
+            self._log_highlight_extraction_error(str(e), num_highlights)
+            return []
     
-    def _handle_highlight_extraction_failure(self, num_highlights: int) -> List[Dict]:
-        """Handle highlight extraction failure by using basic time-based segments."""
+    def _log_highlight_extraction_error(self, error_message: str, num_highlights: int):
+        """Log highlight extraction error to output directory."""
         try:
-            logger.warning("Video analysis failed, using time-based highlight extraction")
+            from ..utils.error_handler import PipelineErrorHandler
             
-            highlights = []
-            segment_duration = 15
-            spacing = 30  # 30 seconds between highlights
-            
-            for i in range(min(num_highlights, 3)):
-                start_time = i * spacing + 10  # Start 10 seconds in to avoid intro
-                highlights.append({
-                    "start_time": start_time,
-                    "end_time": start_time + segment_duration,
-                    "duration": segment_duration,
-                    "excitement_score": 60.0 + (i * 10),  # Vary scores slightly
-                    "title": f"Key Moment {i + 1}",
-                    "extraction_method": "time_based_fallback"
-                })
-            
-            return highlights
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            error_log_path = error_handler.log_error(
+                error_type="HIGHLIGHT_EXTRACTION_FAILURE",
+                error_message=f"Highlight extraction failed: {error_message}",
+                output_dir=str(output_dir),
+                context={
+                    "num_highlights": num_highlights,
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"Highlight extraction failed, error logged to: {error_log_path}")
             
         except Exception as e:
-            logger.error(f"Error in highlight extraction failure handling: {e}")
-            return []
+            logger.error(f"Error logging highlight extraction failure: {e}")
 
     def _calculate_segment_excitement(self, video_path: str, start_time: float, end_time: float, cap, fps: float) -> float:
         """Calculate excitement score for a video segment using motion analysis."""
@@ -1887,9 +1999,14 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if llm_model:
                 title = llm_model["generate"](title_prompt, max_tokens=15)
                 if not title or len(title.strip()) == 0:
-                    title = self._handle_llm_generation_failure(title_prompt, 15)
-                    if not title or len(title.strip()) == 0:
-                        title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    error_handler.log_error_to_output(
+                        error=Exception("LLM title generation failed"),
+                        output_path=getattr(self, 'current_output_dir', '/tmp'),
+                        context={"prompt": title_prompt[:100], "max_tokens": 15}
+                    )
+                    title = f"Epic {channel_type.title()} Adventure - Episode {random.randint(1, 100)}"
                 else:
                     title = title.strip()
                     title = title.replace('"', '').replace("'", "").replace('-!', '').replace('"-', '')
@@ -1908,9 +2025,14 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if llm_model:
                 description = llm_model["generate"](description_prompt, max_tokens=50)
                 if not description or len(description.strip()) == 0:
-                    description = self._handle_llm_generation_failure(description_prompt, 50)
-                    if not description or len(description.strip()) == 0:
-                        description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    error_handler.log_error_to_output(
+                        error=Exception("LLM description generation failed"),
+                        output_path=getattr(self, 'current_output_dir', '/tmp'),
+                        context={"prompt": description_prompt[:100], "max_tokens": 50}
+                    )
+                    description = f"An epic {channel_type} adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of anime and manga like never before!"
                 else:
                     description = description.strip()
                     description = description.replace('Title: [Show spoiler]', '').replace('Example Tit...', '')
@@ -1930,9 +2052,14 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if llm_model:
                 next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=30)
                 if not next_suggestions or len(next_suggestions.strip()) == 0:
-                    next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, 30)
-                    if not next_suggestions or len(next_suggestions.strip()) == 0:
-                        next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    error_handler.log_error_to_output(
+                        error=Exception("LLM next episode generation failed"),
+                        output_path=getattr(self, 'current_output_dir', '/tmp'),
+                        context={"prompt": next_episode_prompt[:100], "max_tokens": 30}
+                    )
+                    next_suggestions = "1. New character introduction and power awakening\n2. Tournament arc with intense battles\n3. Emotional backstory and character development"
                 else:
                     next_suggestions = next_suggestions.strip()
             else:
@@ -2046,9 +2173,49 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             traceback.print_exc()
             
             output_dir = self.ensure_output_dir(project_data.get('output_path', '/tmp/pipeline_output'))
-            fallback_video = output_dir / "fallback_video.mp4"
-            self._handle_video_generation_failure("Pipeline execution failed", 300.0, str(fallback_video))
+            self._log_async_execution_error(str(e), str(output_dir), project_data)
             return str(output_dir)
+    
+    def _log_video_combination_error(self, error_message: str, output_path: str):
+        """Log video combination error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            
+            output_dir = os.path.dirname(output_path) if output_path else getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            error_log_path = error_handler.log_error(
+                error_type="VIDEO_COMBINATION_FAILURE",
+                error_message=f"Video combination failed: {error_message}",
+                output_dir=str(output_dir),
+                context={
+                    "output_path": output_path,
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"Video combination failed, error logged to: {error_log_path}")
+            
+        except Exception as e:
+            logger.error(f"Error logging video combination failure: {e}")
+    
+    def _log_async_execution_error(self, error_message: str, output_dir: str, project_data: Dict):
+        """Log async execution error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            
+            error_handler = PipelineErrorHandler()
+            error_log_path = error_handler.log_error(
+                error_type="ASYNC_PIPELINE_EXECUTION_FAILURE",
+                error_message=f"Async execution failed: {error_message}",
+                output_dir=str(output_dir),
+                context={
+                    "channel_type": getattr(self, 'channel_type', 'unknown'),
+                    "project_data": project_data
+                }
+            )
+            logger.error(f"Async pipeline execution failed, error logged to: {error_log_path}")
+            
+        except Exception as e:
+            logger.error(f"Error logging async execution failure: {e}")
 
     def run_with_script_data(self, input_path: str, script_data: Dict, output_path: str, 
                            base_model: str = "stable_diffusion_1_5", 
@@ -2061,6 +2228,9 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         try:
             logger.info(f"Starting {self.channel_type} pipeline with script data")
             
+            output_dir = self.ensure_output_dir(output_path)
+            self.current_output_dir = str(output_dir)
+            
             if script_data and script_data.get('scenes'):
                 expanded_script = self.expand_script_if_needed(script_data)
                 logger.info(f"Using provided script data with {len(script_data.get('scenes', []))} scenes")
@@ -2070,8 +2240,6 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 logger.info(f"Parsed script from {input_path}")
             
             self._save_llm_expansion_results(expanded_script, output_path)
-            
-            output_dir = self.ensure_output_dir(output_path)
             
             scene_videos = []
             scenes = expanded_script.get('scenes', self._get_default_scenes())
@@ -2104,7 +2272,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             if scene_videos:
                 self._combine_scene_videos(scene_videos, str(final_video))
             else:
-                self._handle_video_generation_failure("Default content", 300.0, str(final_video))
+                # Log error instead of fallback generation
+                self._log_video_generation_error("Default content", 300.0, str(final_video), "No scene videos generated")
             
             self.create_manifest(output_dir, 
                                scenes_generated=len(scene_videos),

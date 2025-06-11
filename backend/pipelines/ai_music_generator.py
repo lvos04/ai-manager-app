@@ -111,7 +111,7 @@ class AIMusicGenerator:
             return False
     
     def _load_musicgen(self, model_name: str) -> bool:
-        """Load MusicGen model with fallback for missing audiocraft package."""
+        """Load MusicGen model with error handling for missing audiocraft package."""
         try:
             try:
                 from audiocraft.models import MusicGen
@@ -153,7 +153,14 @@ class AIMusicGenerator:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load music model: {model_name}")
-                return self._handle_music_generation_failure(description, duration, output_path)
+                from .utils.error_handler import PipelineErrorHandler
+                error_handler = PipelineErrorHandler()
+                error_handler.log_error_to_output(
+                    error=Exception(f"Failed to load music model: {model_name}"),
+                    output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                    context={"model_name": model_name, "description": description, "duration": duration}
+                )
+                return False
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -168,11 +175,25 @@ class AIMusicGenerator:
                 return self._generate_musicgen_audio(optimized_prompt, output_path, actual_duration)
             else:
                 logger.error(f"Unknown music generation method for {model_name}")
-                return self._handle_music_generation_failure(description, duration, output_path)
+                from .utils.error_handler import PipelineErrorHandler
+                error_handler = PipelineErrorHandler()
+                error_handler.log_error_to_output(
+                    error=Exception(f"Unknown music generation method for {model_name}"),
+                    output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                    context={"model_name": model_name, "description": description, "duration": duration}
+                )
+                return False
                 
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            return self._handle_music_generation_failure(description, duration, output_path)
+            from .utils.error_handler import PipelineErrorHandler
+            error_handler = PipelineErrorHandler()
+            error_handler.log_error_to_output(
+                error=e,
+                output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                context={"model_name": model_name, "description": description, "duration": duration}
+            )
+            return False
     
     def _generate_musicgen_audio(self, prompt: str, output_path: str, duration: float) -> bool:
         """Generate music using MusicGen."""
@@ -250,9 +271,13 @@ class AIMusicGenerator:
                 if success:
                     music_files.append(output_file)
                 else:
-                    fallback_file = os.path.join(output_dir, f"fallback_music_{i+1}.wav")
-                    self._handle_music_generation_failure(scene_desc, scene_duration, fallback_file)
-                    music_files.append(fallback_file)
+                    from .utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    error_handler.log_error_to_output(
+                        error=Exception(f"Music generation failed for scene {i+1}"),
+                        output_path=output_dir,
+                        context={"scene_description": scene_desc, "scene_duration": scene_duration, "scene_index": i+1}
+                    )
             
             return music_files
             
@@ -343,21 +368,7 @@ class AIMusicGenerator:
             logger.error(f"Error in FFmpeg music combination: {e}")
             return False
     
-    def _handle_music_generation_failure(self, description: str, duration: float, output_path: str) -> bool:
-        """Handle music generation failure by trying alternative models."""
-        try:
-            alternative_models = ["musicgen_small", "musicgen_medium"]
-            for model_name in alternative_models:
-                if model_name != self.current_model:
-                    if self.load_model(model_name):
-                        return self.generate_music(description, model_name, output_path, duration)
-            
-            logger.error("All music models failed, cannot generate music")
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error in music generation failure handling: {e}")
-            return False
+
     
     def force_cleanup_all_models(self):
         """Force cleanup of all loaded music models."""
