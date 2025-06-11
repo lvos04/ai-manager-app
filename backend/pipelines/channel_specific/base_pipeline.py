@@ -1135,7 +1135,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                     import re
                     json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
                     if json_match:
-                        scene_analysis = json.loads(json_match.group())
+                        clean_json = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_match.group())
+                        scene_analysis = json.loads(clean_json)
                         
                         enhanced_scene = self._enhance_scene_for_channel(scene_analysis, channel_type)
                         enhanced_scene['original_description'] = scene_text
@@ -1653,6 +1654,48 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Error logging music generation failure: {e}")
+    
+    def _log_music_model_error(self, model_type: str, error_message: str):
+        """Log music model loading error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            error_handler.log_error(
+                error_type="MUSIC_MODEL_LOADING_FAILURE",
+                error_message=f"Music model loading failed: {error_message}",
+                output_dir=str(output_dir),
+                context={
+                    "model_type": model_type,
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"Music model loading failed, error logged to output directory")
+            
+        except Exception as e:
+            logger.error(f"Error logging music model failure: {e}")
+    
+    def _log_llm_scene_error(self, scene_num: int, error_message: str):
+        """Log LLM scene processing error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            
+            output_dir = getattr(self, 'current_output_dir', '/tmp')
+            error_handler = PipelineErrorHandler()
+            error_handler.log_error(
+                error_type="LLM_SCENE_PROCESSING_FAILURE",
+                error_message=f"LLM scene processing failed: {error_message}",
+                output_dir=str(output_dir),
+                context={
+                    "scene_number": scene_num,
+                    "channel_type": getattr(self, 'channel_type', 'unknown')
+                }
+            )
+            logger.error(f"LLM scene processing failed, error logged to output directory")
+            
+        except Exception as e:
+            logger.error(f"Error logging LLM scene failure: {e}")
     
     def cleanup_models(self):
         """Clean up loaded models to free memory."""
