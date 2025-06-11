@@ -173,7 +173,8 @@ class AIUpscaler:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load upscaling model: {model_name}")
-                return self._handle_upscale_failure(input_path, output_path)
+                self._log_upscale_error(input_path, output_path, f"Failed to load model: {model_name}")
+                return False
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -183,7 +184,8 @@ class AIUpscaler:
             
         except Exception as e:
             logger.error(f"Error upscaling video: {e}")
-            return self._handle_upscale_failure(input_path, output_path)
+            self._log_upscale_error(input_path, output_path, str(e))
+            return False
     
     def _upscale_video_frames(self, input_path: str, output_path: str, 
                              target_resolution: Tuple[int, int] = None) -> bool:
@@ -241,12 +243,8 @@ class AIUpscaler:
                     out.write(upscaled_frame)
                     
                 except Exception as e:
-                    logger.warning(f"Error processing frame {frame_idx}: {e}")
-                    if target_resolution:
-                        fallback_frame = cv2.resize(frame, target_resolution, interpolation=cv2.INTER_LANCZOS4)
-                    else:
-                        fallback_frame = frame
-                    out.write(fallback_frame)
+                    logger.error(f"Error processing frame {frame_idx}: {e}")
+                    continue
                 
                 frame_idx += 1
             
@@ -269,7 +267,9 @@ class AIUpscaler:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load upscaling model: {model_name}")
-                return self._handle_upscale_failure(input_path, output_path) if output_path else False
+                if output_path:
+                    self._log_upscale_error(input_path, output_path, f"Failed to load model: {model_name}")
+                return False
             
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
@@ -296,25 +296,32 @@ class AIUpscaler:
                 
         except Exception as e:
             logger.error(f"Error upscaling image: {e}")
-            return self._handle_upscale_failure(input_path, output_path) if output_path else False
-    
-    def _handle_upscale_failure(self, input_path: str, output_path: str) -> bool:
-        """Handle upscaling failure by returning original video without FFmpeg fallback."""
-        try:
-            import shutil
-            logger.warning("RealESRGAN upscaling failed, returning original video without FFmpeg fallback")
-            
-            if input_path != output_path:
-                shutil.copy2(input_path, output_path)
-                logger.info(f"Copied original video to output: {output_path}")
-                return True
-            else:
-                logger.info("Input and output paths are the same, no copy needed")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to copy original video: {e}")
+            if output_path:
+                self._log_upscale_error(input_path, output_path, str(e))
             return False
+    
+    def _log_upscale_error(self, input_path: str, output_path: str, error_message: str):
+        """Log upscaling error to output directory."""
+        try:
+            from ..utils.error_handler import PipelineErrorHandler
+            import os
+            
+            output_dir = os.path.dirname(output_path) if output_path else '/tmp'
+            error_handler = PipelineErrorHandler()
+            upscale_error = Exception(f"RealESRGAN upscaling failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=upscale_error,
+                output_path=output_dir,
+                context={
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "error_details": error_message
+                }
+            )
+            logger.error(f"Upscaling failed, error logged to output directory")
+            
+        except Exception as e:
+            logger.error(f"Error logging upscale failure: {e}")
     
 
     

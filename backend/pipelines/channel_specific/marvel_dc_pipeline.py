@@ -164,7 +164,15 @@ class MarvelDCChannelPipeline(BasePipeline):
                 enhanced_scenes = processed_script.get('enhanced_scenes', [])
                 print(f"LLM processed {len(enhanced_scenes)} Marvel/DC scenes with model-specific prompts")
             else:
-                print("Using fallback scene processing for Marvel/DC")
+                from ..utils.error_handler import PipelineErrorHandler
+                error_handler = PipelineErrorHandler()
+                llm_error = Exception("LLM processing failed for Marvel/DC scenes")
+                error_handler.log_error_to_output(
+                    error=llm_error,
+                    output_path=str(output_dir),
+                    context={"channel_type": "marvel_dc", "script_data": script_data}
+                )
+                logger.error("LLM processing failed, error logged to output directory")
                 enhanced_scenes = processed_script.get('enhanced_scenes', [])
             
             scenes = enhanced_scenes
@@ -270,9 +278,11 @@ class MarvelDCChannelPipeline(BasePipeline):
                     if success and os.path.exists(str(scene_file)):
                         video_path = str(scene_file)
                     else:
-                        video_path = self._handle_video_generation_failure(comic_prompt, 12.0, str(scene_file))
-                except Exception:
-                    video_path = self._handle_video_generation_failure(comic_prompt, 12.0, str(scene_file))
+                        self._log_video_generation_error(comic_prompt, 12.0, str(scene_file), "Video generation failed")
+                        video_path = None
+                except Exception as e:
+                    self._log_video_generation_error(comic_prompt, 12.0, str(scene_file), str(e))
+                    video_path = None
                 
                 if video_path:
                     scene_files.append(video_path)
@@ -284,11 +294,12 @@ class MarvelDCChannelPipeline(BasePipeline):
                     from ..text_to_video_generator import TextToVideoGenerator
                     video_generator = TextToVideoGenerator()
                     success = video_generator.generate_video(scene_text, "animatediff_v2_sdxl", str(scene_file), 12.0)
-                    fallback_path = str(scene_file) if success else None
-                except Exception:
-                    fallback_path = None
-                if fallback_path:
-                    scene_files.append(fallback_path)
+                    if success and os.path.exists(str(scene_file)):
+                        scene_files.append(str(scene_file))
+                    else:
+                        self._log_video_generation_error(scene_text, 12.0, str(scene_file), "TextToVideoGenerator failed")
+                except Exception as e:
+                    self._log_video_generation_error(scene_text, 12.0, str(scene_file), f"TextToVideoGenerator error: {e}")
             
             if db_run and db:
                 progress = 20.0 + (i + 1) / len(scenes) * 40.0
@@ -684,11 +695,13 @@ class MarvelDCChannelPipeline(BasePipeline):
             except Exception as e:
                 logger.warning(f"Video generation failed: {e}")
             
-            return self._handle_video_generation_failure(scene_description, duration, output_path)
+            self._log_video_generation_error(scene_description, duration, output_path, "All video generation methods failed")
+            return None
             
         except Exception as e:
             logger.error(f"Error in scene video generation: {e}")
-            return self._handle_video_generation_failure(scene_description, duration, output_path)
+            self._log_video_generation_error(scene_description, duration, output_path, str(e))
+            return None
     
     def _optimize_video_prompt(self, prompt: str, channel_type: str = "marvel_dc", model_name: str = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
@@ -734,11 +747,13 @@ class MarvelDCChannelPipeline(BasePipeline):
                 if success and os.path.exists(output_path):
                     return output_path
             
-            return self._handle_voice_generation_failure(text, output_path)
+            self._log_voice_generation_error(text, output_path, "All voice generation methods failed")
+            return None
             
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
-            return self._handle_voice_generation_failure(text, output_path)
+            self._log_voice_generation_error(text, output_path, str(e))
+            return None
     
 
     
@@ -761,11 +776,13 @@ class MarvelDCChannelPipeline(BasePipeline):
                 if success and os.path.exists(output_path):
                     return output_path
             
-            return self._handle_music_generation_failure(description="background music", duration=duration, output_path=output_path)
+            self._log_music_generation_error("background music", duration, output_path, "All music generation methods failed")
+            return None
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            return self._handle_music_generation_failure(description="background music", duration=duration, output_path=output_path)
+            self._log_music_generation_error("background music", duration, output_path, str(e))
+            return None
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
                                       target_resolution: str = "1080p", enabled: bool = True) -> str:
@@ -861,7 +878,8 @@ class MarvelDCChannelPipeline(BasePipeline):
                     title = llm_model["generate"](title_prompt, max_tokens=50)
                 except Exception as e:
                     logger.warning(f"LLM title generation failed: {e}")
-                    title = self._handle_llm_generation_failure(title_prompt, max_tokens=50)
+                    self._log_llm_content_error(title_prompt, 50, str(e))
+                    title = None
             else:
                 title = f"Epic Superhero Adventure - Episode {random.randint(1, 100)}"
             
@@ -875,7 +893,8 @@ class MarvelDCChannelPipeline(BasePipeline):
                     description = llm_model["generate"](description_prompt, max_tokens=300)
                 except Exception as e:
                     logger.warning(f"LLM description generation failed: {e}")
-                    description = self._handle_llm_generation_failure(description_prompt, max_tokens=300)
+                    self._log_llm_content_error(description_prompt, 300, str(e))
+                    description = None
             else:
                 description = f"An epic superhero adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of superheroes like never before!"
             
@@ -889,7 +908,8 @@ class MarvelDCChannelPipeline(BasePipeline):
                     next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
                 except Exception as e:
                     logger.warning(f"LLM next episode generation failed: {e}")
-                    next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, max_tokens=200)
+                    self._log_llm_content_error(next_episode_prompt, 200, str(e))
+                    next_suggestions = None
             else:
                 next_suggestions = "1. New villain emerges with greater threat\n2. Hero team-up and alliance formation\n3. Origin story of supporting character"
             
@@ -920,7 +940,8 @@ class MarvelDCChannelPipeline(BasePipeline):
         """Combine scenes into final episode with maximum quality."""
         try:
             if not scene_files:
-                return self._handle_video_generation_failure("No scenes to combine", 60, output_path)
+                self._log_video_combination_error("No scenes to combine", output_path)
+                return None
             
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 concat_file = f.name
@@ -952,7 +973,21 @@ class MarvelDCChannelPipeline(BasePipeline):
                     return output_path
                 else:
                     logger.warning(f"FFmpeg combination failed: {result.stderr}")
-                    return self._handle_video_generation_failure("Episode content", 300, output_path)
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    video_error = Exception(f"FFmpeg combination failed: {result.stderr}")
+                    error_handler.log_error_to_output(
+                        error=video_error,
+                        output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                        context={
+                            "prompt": "Episode content",
+                            "duration": 300,
+                            "output_path": output_path,
+                            "channel_type": "marvel_dc",
+                            "error_details": f"FFmpeg combination failed: {result.stderr}"
+                        }
+                    )
+                    return None
                     
             finally:
                 if os.path.exists(concat_file):
@@ -960,7 +995,20 @@ class MarvelDCChannelPipeline(BasePipeline):
                     
         except Exception as e:
             logger.error(f"Error combining scenes: {e}")
-            return self._handle_video_generation_failure("Episode content", 300, output_path)
+            from ..utils.error_handler import PipelineErrorHandler
+            error_handler = PipelineErrorHandler()
+            error_handler.log_error_to_output(
+                error=e,
+                output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                context={
+                    "prompt": "Episode content",
+                    "duration": 300,
+                    "output_path": output_path,
+                    "channel_type": "marvel_dc",
+                    "error_details": str(e)
+                }
+            )
+            return None
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
         """Create shorts by extracting highlights from the main video."""

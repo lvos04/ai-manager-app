@@ -376,7 +376,14 @@ class TextToVideoGenerator:
         try:
             if not self.load_model(model_name):
                 logger.error(f"Failed to load model: {model_name}")
-                return self._handle_video_generation_failure(prompt, duration, output_path)
+                from ..utils.error_handler import PipelineErrorHandler
+                error_handler = PipelineErrorHandler()
+                error_handler.log_error_to_output(
+                    error=Exception(f"Video generation failed: {model_name}"),
+                    output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                    context={"model_name": model_name, "prompt": prompt[:100]}
+                )
+                return False
             
             settings = self.get_optimal_settings(model_name)
             optimized_prompt = self.optimize_prompt_for_model(prompt, model_name, scene_type)
@@ -397,11 +404,19 @@ class TextToVideoGenerator:
                 return self._generate_modelscope_video(pipeline, optimized_prompt, output_path, settings)
             else:
                 logger.error(f"Unknown generation method for {model_name}")
-                return self._handle_video_generation_failure(prompt, duration, output_path)
+                from ..utils.error_handler import PipelineErrorHandler
+                error_handler = PipelineErrorHandler()
+                error_handler.log_error_to_output(
+                    error=Exception(f"Video generation failed: {model_name}"),
+                    output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                    context={"model_name": model_name, "prompt": prompt[:100]}
+                )
+                return False
                 
         except Exception as e:
             logger.error(f"Error generating video: {e}")
-            return self._handle_video_generation_failure(prompt, duration, output_path)
+            self._log_video_generation_error(prompt, duration, output_path, str(e))
+            return False
     
     def _generate_svd_video(self, pipeline, prompt: str, output_path: str, settings: Dict) -> bool:
         """Generate video using SVD-XT."""
@@ -645,21 +660,29 @@ class TextToVideoGenerator:
         
         return optimized
     
-    def _handle_video_generation_failure(self, prompt: str, duration: float, output_path: str) -> bool:
-        """Handle video generation failure by trying alternative models."""
+    def _log_video_generation_error(self, prompt: str, duration: float, output_path: str, error_message: str):
+        """Log video generation error to output directory."""
         try:
-            alternative_models = ["animatediff_v2_sdxl", "zeroscope_v2_xl", "modelscope_t2v"]
-            for model_name in alternative_models:
-                if model_name != self.current_model:
-                    if self.load_model(model_name):
-                        return self.generate_video(prompt, model_name, output_path, duration)
+            from ..utils.error_handler import PipelineErrorHandler
+            import os
             
-            logger.error("All video models failed, cannot generate video")
-            return False
+            output_dir = os.path.dirname(output_path) if output_path else '/tmp'
+            error_handler = PipelineErrorHandler()
+            video_error = Exception(f"Video generation failed: {error_message}")
+            error_handler.log_error_to_output(
+                error=video_error,
+                output_path=output_dir,
+                context={
+                    "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                    "duration": duration,
+                    "output_path": output_path,
+                    "error_details": error_message
+                }
+            )
+            logger.error(f"Video generation failed, error logged to output directory")
             
         except Exception as e:
-            logger.error(f"Error in video generation failure handling: {e}")
-            return False
+            logger.error(f"Error logging video generation failure: {e}")
     
     def force_cleanup_all_models(self):
         """Force cleanup of all loaded models."""

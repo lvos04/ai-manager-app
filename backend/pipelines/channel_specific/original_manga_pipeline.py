@@ -167,7 +167,15 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 enhanced_scenes = processed_script.get('enhanced_scenes', [])
                 print(f"LLM processed {len(enhanced_scenes)} original manga scenes with model-specific prompts")
             else:
-                print("Using fallback scene processing for original manga")
+                from ..utils.error_handler import PipelineErrorHandler
+                error_handler = PipelineErrorHandler()
+                llm_error = Exception("LLM processing failed for original manga script")
+                error_handler.log_error_to_output(
+                    error=llm_error,
+                    output_path=str(output_dir),
+                    context={"channel_type": "original_manga", "script_data": script_data}
+                )
+                logger.error("LLM processing failed, error logged to output directory")
                 enhanced_scenes = processed_script.get('enhanced_scenes', [])
             
             scenes = enhanced_scenes
@@ -303,10 +311,12 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     if success and os.path.exists(str(scene_file)) and os.path.getsize(str(scene_file)) > 1000:
                         video_path = str(scene_file)
                     else:
-                        video_path = self._handle_video_generation_failure(manga_prompt, 12.0, str(scene_file))
+                        self._log_video_generation_error(manga_prompt, 12.0, str(scene_file), "Video generation failed")
+                        video_path = None
                 except Exception as e:
                     logger.error(f"Error generating scene video: {e}")
-                    video_path = self._handle_video_generation_failure(manga_prompt, 12.0, str(scene_file))
+                    self._log_video_generation_error(manga_prompt, 12.0, str(scene_file), str(e))
+                    video_path = None
                 
                 if video_path:
                     scene_files.append(video_path)
@@ -318,11 +328,28 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     from ..text_to_video_generator import TextToVideoGenerator
                     video_generator = TextToVideoGenerator()
                     success = video_generator.generate_video(scene_text, "animatediff_v2_sdxl", str(scene_file), 12.0)
-                    fallback_path = str(scene_file) if success else None
-                except Exception:
-                    fallback_path = None
-                if fallback_path:
-                    scene_files.append(fallback_path)
+                    if success and os.path.exists(str(scene_file)):
+                        scene_files.append(str(scene_file))
+                    else:
+                        from ..utils.error_handler import PipelineErrorHandler
+                        error_handler = PipelineErrorHandler()
+                        video_error = Exception(f"Alternative video generation failed for scene {i+1}")
+                        error_handler.log_error_to_output(
+                            error=video_error,
+                            output_path=str(scenes_dir),
+                            context={"scene_text": scene_text, "scene_number": i+1, "channel_type": "original_manga"}
+                        )
+                        logger.error(f"Alternative video generation failed for scene {i+1}, error logged")
+                except Exception as e:
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    video_error = Exception(f"Video generation exception for scene {i+1}: {e}")
+                    error_handler.log_error_to_output(
+                        error=video_error,
+                        output_path=str(scenes_dir),
+                        context={"scene_text": scene_text, "scene_number": i+1, "channel_type": "original_manga", "exception": str(e)}
+                    )
+                    logger.error(f"Video generation exception for scene {i+1}, error logged")
             
             if db_run and db:
                 progress = 20.0 + (i + 1) / len(scenes) * 40.0
@@ -378,7 +405,8 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 
         except Exception as e:
             print(f"Error generating background music: {e}")
-            music_path = self._handle_voice_generation_failure("background music", str(music_file))
+            self._log_music_generation_error("background music", 60.0, str(music_file), str(e))
+            music_path = None
         
         print("Step 7: Combining scenes into final original manga episode...")
         if db_run and db:
@@ -552,9 +580,9 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     try:
                         scene_duration = float(scene_duration.replace('seconds', '').strip())
                     except (ValueError, AttributeError):
-                        scene_duration = 2.0  # Default fallback
+                        scene_duration = 2.0  # Default duration
                 elif not isinstance(scene_duration, (int, float)):
-                    scene_duration = 2.0  # Default fallback
+                    scene_duration = 2.0  # Default duration
                 
                 total_duration += scene_duration
         
@@ -730,11 +758,13 @@ class OriginalMangaChannelPipeline(BasePipeline):
             except Exception as e:
                 logger.warning(f"Video generation failed: {e}")
             
-            return self._handle_video_generation_failure(scene_description, duration, output_path)
+            self._log_video_generation_error(scene_description, duration, output_path, "All video generation methods failed")
+            return None
             
         except Exception as e:
             logger.error(f"Error in scene video generation: {e}")
-            return self._handle_video_generation_failure(scene_description, duration, output_path)
+            self._log_video_generation_error(scene_description, duration, output_path, str(e))
+            return None
     
     def _optimize_video_prompt(self, prompt: str, channel_type: str = "original_manga", model_name: str = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
@@ -780,11 +810,13 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 if success and os.path.exists(output_path):
                     return output_path
             
-            return self._handle_voice_generation_failure(text, output_path)
+            self._log_voice_generation_error(text, output_path, "All voice generation methods failed")
+            return None
             
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
-            return self._handle_voice_generation_failure(text, output_path)
+            self._log_voice_generation_error(text, output_path, str(e))
+            return None
     
 
     
@@ -807,11 +839,13 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 if success and os.path.exists(output_path):
                     return output_path
             
-            return self._handle_voice_generation_failure("background music", output_path)
+            self._log_music_generation_error("background music", 30.0, output_path, "All music generation methods failed")
+            return None
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
-            return self._handle_voice_generation_failure("background music", output_path)
+            self._log_music_generation_error("background music", 30.0, output_path, str(e))
+            return None
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
                                       target_resolution: str = "1080p", enabled: bool = True) -> str:
@@ -906,12 +940,15 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 try:
                     title = llm_model["generate"](title_prompt, max_tokens=50)
                     if not title or len(title.strip()) < 5:
-                        title = self._handle_llm_generation_failure(title_prompt, 50)
+                        self._log_llm_content_error(title_prompt, 50, "LLM returned invalid title")
+                        title = "Original Manga Episode"
                 except Exception as e:
                     logger.warning(f"LLM title generation failed: {e}")
-                    title = self._handle_llm_generation_failure(title_prompt, 50)
+                    self._log_llm_content_error(title_prompt, 50, str(e))
+                    title = "Original Manga Episode"
             else:
-                title = self._handle_llm_generation_failure(title_prompt, 50)
+                self._log_llm_content_error(title_prompt, 50, "LLM model not available")
+                title = "Original Manga Episode"
             
             with open(output_dir / "title.txt", "w", encoding="utf-8") as f:
                 f.write(title.strip())
@@ -922,12 +959,15 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 try:
                     description = llm_model["generate"](description_prompt, max_tokens=300)
                     if not description or len(description.strip()) < 20:
-                        description = self._handle_llm_generation_failure(description_prompt, 300)
+                        self._log_llm_content_error(description_prompt, 300, "LLM returned invalid description")
+                        description = "An original manga episode with unique storyline and characters."
                 except Exception as e:
                     logger.warning(f"LLM description generation failed: {e}")
-                    description = self._handle_llm_generation_failure(description_prompt, 300)
+                    self._log_llm_content_error(description_prompt, 300, str(e))
+                    description = "An original manga episode with unique storyline and characters."
             else:
-                description = self._handle_llm_generation_failure(description_prompt, 300)
+                self._log_llm_content_error(description_prompt, 300, "LLM model not available")
+                description = "An original manga episode with unique storyline and characters."
             
             with open(output_dir / "description.txt", "w", encoding="utf-8") as f:
                 f.write(description.strip())
@@ -938,12 +978,15 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 try:
                     next_suggestions = llm_model["generate"](next_episode_prompt, max_tokens=200)
                     if not next_suggestions or len(next_suggestions.strip()) < 10:
-                        next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, 200)
+                        self._log_llm_content_error(next_episode_prompt, 200, "LLM returned invalid next episode suggestions")
+                        next_suggestions = "Continue the adventure in the next episode!"
                 except Exception as e:
                     logger.warning(f"LLM next episode generation failed: {e}")
-                    next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, 200)
+                    self._log_llm_content_error(next_episode_prompt, 200, str(e))
+                    next_suggestions = "Continue the adventure in the next episode!"
             else:
-                next_suggestions = self._handle_llm_generation_failure(next_episode_prompt, 200)
+                self._log_llm_content_error(next_episode_prompt, 200, "LLM model not available")
+                next_suggestions = "Continue the adventure in the next episode!"
             
             with open(output_dir / "next_episode.txt", "w", encoding="utf-8") as f:
                 f.write(next_suggestions.strip())
@@ -972,7 +1015,21 @@ class OriginalMangaChannelPipeline(BasePipeline):
         """Combine scenes into final episode with maximum quality."""
         try:
             if not scene_files:
-                return self._handle_video_generation_failure("No scenes to combine", 60, output_path)
+                from ..utils.error_handler import PipelineErrorHandler
+                error_handler = PipelineErrorHandler()
+                video_error = Exception("No scenes to combine")
+                error_handler.log_error_to_output(
+                    error=video_error,
+                    output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                    context={
+                        "prompt": "No scenes to combine",
+                        "duration": 60,
+                        "output_path": output_path,
+                        "channel_type": "original_manga"
+                    }
+                )
+                logger.error("Video generation failed: No scenes to combine, error logged to output directory")
+                return None
             
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 concat_file = f.name
@@ -1004,7 +1061,22 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     return output_path
                 else:
                     logger.warning(f"FFmpeg combination failed: {result.stderr}")
-                    return self._handle_video_generation_failure("Episode content", 300, output_path)
+                    from ..utils.error_handler import PipelineErrorHandler
+                    error_handler = PipelineErrorHandler()
+                    video_error = Exception("FFmpeg combination failed")
+                    error_handler.log_error_to_output(
+                        error=video_error,
+                        output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                        context={
+                            "prompt": "Episode content",
+                            "duration": 300,
+                            "output_path": output_path,
+                            "channel_type": "original_manga",
+                            "ffmpeg_error": result.stderr if 'result' in locals() else "Unknown FFmpeg error"
+                        }
+                    )
+                    logger.error("Video generation failed: FFmpeg combination failed, error logged to output directory")
+                    return None
                     
             finally:
                 if os.path.exists(concat_file):
@@ -1012,7 +1084,22 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     
         except Exception as e:
             logger.error(f"Error combining scenes: {e}")
-            return self._handle_video_generation_failure("Episode content", 300, output_path)
+            from ..utils.error_handler import PipelineErrorHandler
+            error_handler = PipelineErrorHandler()
+            video_error = Exception(f"Error combining scenes: {e}")
+            error_handler.log_error_to_output(
+                error=video_error,
+                output_path=os.path.dirname(output_path) if output_path else '/tmp',
+                context={
+                    "prompt": "Episode content",
+                    "duration": 300,
+                    "output_path": output_path,
+                    "channel_type": "original_manga",
+                    "error_details": str(e)
+                }
+            )
+            logger.error(f"Video generation failed: Error combining scenes: {e}, error logged to output directory")
+            return None
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
         """Create shorts by extracting highlights from the main video."""
