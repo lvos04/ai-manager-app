@@ -483,7 +483,7 @@ class GamingChannelPipeline(BasePipeline):
             from ...utils.error_handler import PipelineErrorHandler
             error_handler = PipelineErrorHandler()
             compilation_error = Exception(f"Compilation error: {e}")
-            error_handler.log_error_to_output(
+            PipelineErrorHandler.log_error_to_output(
                 error=compilation_error,
                 output_path=os.path.dirname(output_path) if output_path else '/tmp',
                 context={
@@ -504,7 +504,7 @@ class GamingChannelPipeline(BasePipeline):
                 from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 no_scenes_error = Exception("No scenes generated for gaming content")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=no_scenes_error,
                     output_path=os.path.dirname(output_path) if output_path else '/tmp',
                     context={
@@ -546,7 +546,7 @@ class GamingChannelPipeline(BasePipeline):
                 from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 combination_error = Exception("Scene combination failed - no frames written")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=combination_error,
                     output_path=os.path.dirname(output_path) if output_path else '/tmp',
                     context={
@@ -562,7 +562,7 @@ class GamingChannelPipeline(BasePipeline):
             print(f"Error in scene combination: {e}")
             from ...utils.error_handler import PipelineErrorHandler
             error_handler = PipelineErrorHandler()
-            error_handler.log_error_to_output(
+            PipelineErrorHandler.log_error_to_output(
                 error=e,
                 output_path=os.path.dirname(output_path) if output_path else '/tmp',
                 context={
@@ -739,10 +739,10 @@ class GamingChannelPipeline(BasePipeline):
     
     def create_ai_video(self, scene_file: str, scene_prompt: str, scene_num: int):
         """Log video generation failure instead of creating fallback content."""
-        from ..utils.error_handler import PipelineErrorHandler
+        from ...utils.error_handler import PipelineErrorHandler
         error_handler = PipelineErrorHandler()
         video_error = Exception(f"AI video generation failed for scene {scene_num}")
-        error_handler.log_error_to_output(
+        PipelineErrorHandler.log_error_to_output(
             error=video_error,
             output_path=os.path.dirname(scene_file) if scene_file else '/tmp',
             context={
@@ -1011,7 +1011,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 video_error = Exception(f"Video generation failed for scene {i}")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=video_error,
                     output_path=os.path.dirname(str(scene_file)) if scene_file else '/tmp',
                     context={
@@ -1028,7 +1028,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             from ...utils.error_handler import PipelineErrorHandler
             error_handler = PipelineErrorHandler()
             video_error = Exception(f"Video generation failed for scene {i}")
-            error_handler.log_error_to_output(
+            PipelineErrorHandler.log_error_to_output(
                 error=video_error,
                 output_path=os.path.dirname(str(scene_file)) if scene_file else '/tmp',
                 context={
@@ -1102,7 +1102,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                         from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         voice_error = Exception("Voice model not available for gaming commentary")
-                        error_handler.log_error_to_output(
+                        PipelineErrorHandler.log_error_to_output(
                             error=voice_error,
                             output_path=os.path.dirname(str(voice_file)) if voice_file else '/tmp',
                             context={
@@ -1120,7 +1120,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                         from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         music_error = Exception("Music model not available for gaming content")
-                        error_handler.log_error_to_output(
+                        PipelineErrorHandler.log_error_to_output(
                             error=music_error,
                             output_path=os.path.dirname(str(music_file)) if music_file else '/tmp',
                             context={
@@ -1145,7 +1145,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                 from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
                 video_error = Exception(f"Video generation failed for scene {i+1}")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=video_error,
                     output_path=os.path.dirname(str(animated_file)) if animated_file else '/tmp',
                     context={
@@ -1374,7 +1374,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                     from ...utils.error_handler import PipelineErrorHandler
                     error_handler = PipelineErrorHandler()
                     music_error = Exception("Music generation failed for gaming content")
-                    error_handler.log_error_to_output(
+                    PipelineErrorHandler.log_error_to_output(
                         error=music_error,
                         output_path=str(music_file.parent),
                         context={
@@ -1387,7 +1387,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
             except Exception as inner_e:
                 from ...utils.error_handler import PipelineErrorHandler
                 error_handler = PipelineErrorHandler()
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=inner_e,
                     output_path="/tmp",
                     context={
@@ -1443,7 +1443,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                         from ...utils.error_handler import PipelineErrorHandler
                         error_handler = PipelineErrorHandler()
                         intro_error = Exception("AnimateDiff model failed to generate intro frames")
-                        error_handler.log_error_to_output(
+                        PipelineErrorHandler.log_error_to_output(
                             error=intro_error,
                             output_path='/tmp',
                             context={
@@ -1475,7 +1475,7 @@ def run(input_path: str, output_path: str, base_model: str = "stable_diffusion_1
                             from ...utils.error_handler import PipelineErrorHandler
                             error_handler = PipelineErrorHandler()
                             intro_error = Exception("No frames generated for intro sequence")
-                            error_handler.log_error_to_output(
+                            PipelineErrorHandler.log_error_to_output(
                                 error=intro_error,
                                 output_path='/tmp',
                                 context={

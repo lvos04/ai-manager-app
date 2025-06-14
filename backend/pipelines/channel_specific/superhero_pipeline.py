@@ -168,9 +168,8 @@ class SuperheroChannelPipeline(BasePipeline):
                 print(f"LLM processed {len(enhanced_scenes)} superhero scenes with model-specific prompts")
             else:
                 from ...utils.error_handler import PipelineErrorHandler
-                error_handler = PipelineErrorHandler()
                 llm_error = Exception("LLM processing failed for superhero script")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=llm_error,
                     output_path=str(output_dir),
                     context={
@@ -923,9 +922,8 @@ class SuperheroChannelPipeline(BasePipeline):
                 except Exception as e:
                     logger.warning(f"LLM next episode generation failed: {e}")
                     from ...utils.error_handler import PipelineErrorHandler
-                    error_handler = PipelineErrorHandler()
                     llm_error = Exception(f"LLM next episode generation failed: {e}")
-                    error_handler.log_error_to_output(
+                    PipelineErrorHandler.log_error_to_output(
                         error=llm_error,
                         output_path=str(output_dir),
                         context={
@@ -938,9 +936,8 @@ class SuperheroChannelPipeline(BasePipeline):
                     next_suggestions = "1. The adventure continues with new challenges\n2. Character development and new powers\n3. Epic finale with ultimate showdown"
             else:
                 from ...utils.error_handler import PipelineErrorHandler
-                error_handler = PipelineErrorHandler()
                 llm_error = Exception("LLM not available for next episode generation")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=llm_error,
                     output_path=str(output_dir),
                     context={
@@ -980,9 +977,8 @@ class SuperheroChannelPipeline(BasePipeline):
         try:
             if not scene_files:
                 from ...utils.error_handler import PipelineErrorHandler
-                error_handler = PipelineErrorHandler()
                 video_error = Exception("No scenes to combine")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=video_error,
                     output_path=output_path,
                     context={
@@ -1027,9 +1023,8 @@ class SuperheroChannelPipeline(BasePipeline):
                 else:
                     logger.warning(f"FFmpeg combination failed: {result.stderr}")
                     from ...utils.error_handler import PipelineErrorHandler
-                    error_handler = PipelineErrorHandler()
                     video_error = Exception(f"FFmpeg combination failed: {result.stderr}")
-                    error_handler.log_error_to_output(
+                    PipelineErrorHandler.log_error_to_output(
                         error=video_error,
                         output_path=output_path,
                         context={
@@ -1050,8 +1045,7 @@ class SuperheroChannelPipeline(BasePipeline):
         except Exception as e:
             logger.error(f"Error combining scenes: {e}")
             from ...utils.error_handler import PipelineErrorHandler
-            error_handler = PipelineErrorHandler()
-            error_handler.log_error_to_output(
+            PipelineErrorHandler.log_error_to_output(
                 error=e,
                 output_path=output_path,
                 context={

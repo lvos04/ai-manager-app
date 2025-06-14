@@ -164,10 +164,9 @@ class MarvelDCChannelPipeline(BasePipeline):
                 enhanced_scenes = processed_script.get('enhanced_scenes', [])
                 print(f"LLM processed {len(enhanced_scenes)} Marvel/DC scenes with model-specific prompts")
             else:
-                from ..utils.error_handler import PipelineErrorHandler
-                error_handler = PipelineErrorHandler()
+                from ...utils.error_handler import PipelineErrorHandler
                 llm_error = Exception("LLM processing failed for Marvel/DC scenes")
-                error_handler.log_error_to_output(
+                PipelineErrorHandler.log_error_to_output(
                     error=llm_error,
                     output_path=str(output_dir),
                     context={"channel_type": "marvel_dc", "script_data": script_data}
@@ -974,9 +973,8 @@ class MarvelDCChannelPipeline(BasePipeline):
                 else:
                     logger.warning(f"FFmpeg combination failed: {result.stderr}")
                     from ...utils.error_handler import PipelineErrorHandler
-                    error_handler = PipelineErrorHandler()
                     video_error = Exception(f"FFmpeg combination failed: {result.stderr}")
-                    error_handler.log_error_to_output(
+                    PipelineErrorHandler.log_error_to_output(
                         error=video_error,
                         output_path=os.path.dirname(output_path) if output_path else '/tmp',
                         context={
@@ -995,9 +993,8 @@ class MarvelDCChannelPipeline(BasePipeline):
                     
         except Exception as e:
             logger.error(f"Error combining scenes: {e}")
-            from ..utils.error_handler import PipelineErrorHandler
-            error_handler = PipelineErrorHandler()
-            error_handler.log_error_to_output(
+            from ...utils.error_handler import PipelineErrorHandler
+            PipelineErrorHandler.log_error_to_output(
                 error=e,
                 output_path=os.path.dirname(output_path) if output_path else '/tmp',
                 context={

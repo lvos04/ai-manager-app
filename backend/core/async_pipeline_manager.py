@@ -168,7 +168,7 @@ def _get_pipeline_utils():
             try:
                 from ..pipelines.ai_voice_generator import AIVoiceGenerator
                 voice_gen = AIVoiceGenerator()
-                return voice_gen.generate_voice(text, output_path)
+                return voice_gen.generate_voice(text, "bark", output_path)
             except Exception as e:
                 logger.error(f"Voice generation failed: {e}")
                 return False

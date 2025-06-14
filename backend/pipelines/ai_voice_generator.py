@@ -349,11 +349,11 @@ class AIVoiceGenerator:
             if speaker_file.exists():
                 return str(speaker_file)
             
-            return str(lang_speakers["default"]) if lang_speakers["default"].exists() else None
+            return str(lang_speakers["default"]) if lang_speakers["default"].exists() else ""
             
         except Exception as e:
             logger.error(f"Error getting XTTS speaker reference: {e}")
-            return None
+            return ""
     
     def _split_text_for_bark(self, text: str) -> List[str]:
         """Split text into chunks suitable for Bark."""
