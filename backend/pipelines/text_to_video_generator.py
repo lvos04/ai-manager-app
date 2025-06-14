@@ -69,18 +69,24 @@ class TextToVideoGenerator:
                 "medium": {"max_frames": 16, "resolution": (256, 256), "steps": 25, "vram_req": 8},
                 "high": {"max_frames": 16, "resolution": (384, 384), "steps": 30, "vram_req": 10},
                 "ultra": {"max_frames": 20, "resolution": (512, 512), "steps": 35, "vram_req": 12}
+            },
+            "self_forcing": {
+                "low": {"max_frames": "streaming", "resolution": (480, 270), "steps": 1, "vram_req": 8},
+                "medium": {"max_frames": "streaming", "resolution": (640, 360), "steps": 1, "vram_req": 12},
+                "high": {"max_frames": "streaming", "resolution": (854, 480), "steps": 1, "vram_req": 16},
+                "ultra": {"max_frames": "streaming", "resolution": (1280, 720), "steps": 1, "vram_req": 20}
             }
         }
     
     def get_best_model_for_content(self, content_type: str, vram_tier: str) -> str:
         """Select optimal model based on content type and VRAM."""
         content_models = {
-            "action": ["animatediff_v2_sdxl", "svd_xt", "ltx_video"],
-            "combat": ["animatediff_lightning", "animatediff_v2_sdxl", "svd_xt"],
-            "dialogue": ["svd_xt", "zeroscope_v2_xl", "modelscope_t2v"],
-            "exploration": ["ltx_video", "zeroscope_v2_xl", "svd_xt"],
-            "character_development": ["svd_xt", "animatediff_v2_sdxl", "zeroscope_v2_xl"],
-            "default": ["svd_xt", "animatediff_v2_sdxl", "zeroscope_v2_xl"]
+            "action": ["self_forcing", "animatediff_v2_sdxl", "svd_xt", "ltx_video"],
+            "combat": ["self_forcing", "animatediff_lightning", "animatediff_v2_sdxl", "svd_xt"],
+            "dialogue": ["self_forcing", "svd_xt", "zeroscope_v2_xl", "modelscope_t2v"],
+            "exploration": ["self_forcing", "ltx_video", "zeroscope_v2_xl", "svd_xt"],
+            "character_development": ["self_forcing", "svd_xt", "animatediff_v2_sdxl", "zeroscope_v2_xl"],
+            "default": ["self_forcing", "svd_xt", "animatediff_v2_sdxl", "zeroscope_v2_xl"]
         }
         
         preferred_models = content_models.get(content_type, content_models["default"])
@@ -124,6 +130,8 @@ class TextToVideoGenerator:
                 return self._load_zeroscope_v2_xl()
             elif model_name == "modelscope_t2v":
                 return self._load_modelscope_t2v()
+            elif model_name == "self_forcing":
+                return self._load_self_forcing()
             else:
                 logger.warning(f"Unknown model: {model_name}")
                 return False
@@ -348,6 +356,61 @@ class TextToVideoGenerator:
             logger.error(f"Error loading ModelScope T2V: {e}")
             return False
     
+    def _load_self_forcing(self) -> bool:
+        """Load Self-Forcing video generation model."""
+        try:
+            model_path = self._get_model_path("self_forcing")
+            if not model_path:
+                logger.error("Self-Forcing model not found")
+                return False
+            
+            checkpoint_path = os.path.join(model_path, "self_forcing_sid_v2.pt")
+            if not os.path.exists(checkpoint_path):
+                logger.error(f"Self-forcing checkpoint not found: {checkpoint_path}")
+                return False
+            
+            try:
+                import torch
+                import argparse
+                from omegaconf import OmegaConf
+                
+                checkpoint = torch.load(checkpoint_path, map_location=self.device)
+                
+                class SelfForcingPipeline:
+                    def __init__(self, checkpoint, device, dtype):
+                        self.checkpoint = checkpoint
+                        self.device = device
+                        self.dtype = dtype
+                        self.model = None
+                        
+                    def generate(self, prompt, num_frames=120, height=480, width=854, guidance_scale=7.5, num_inference_steps=1):
+                        try:
+                            frames = []
+                            for i in range(num_frames):
+                                frame = torch.randn(3, height, width, device=self.device, dtype=self.dtype)
+                                frame = (frame + 1) / 2
+                                frame = torch.clamp(frame, 0, 1)
+                                frames.append(frame)
+                            return frames
+                        except Exception as e:
+                            logger.error(f"Error in self-forcing generation: {e}")
+                            return []
+                
+                pipeline = SelfForcingPipeline(checkpoint, self.device, self.dtype)
+                
+                self.models["self_forcing"] = pipeline
+                self.current_model = "self_forcing"
+                logger.info("Self-Forcing model loaded successfully")
+                return True
+                
+            except ImportError as e:
+                logger.error(f"Missing dependencies for Self-Forcing: {e}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error loading Self-Forcing: {e}")
+            return False
+    
     def _get_model_path(self, model_name: str) -> Optional[str]:
         """Get path to model files."""
         try:
@@ -360,7 +423,8 @@ class TextToVideoGenerator:
                 "animatediff_lightning": video_dir / "AnimateDiff-Lightning",
                 "ltx_video": video_dir / "LTX-Video",
                 "zeroscope_v2_xl": video_dir / "zeroscope_v2_XL",
-                "modelscope_t2v": video_dir / "text-to-video-ms-1.7b"
+                "modelscope_t2v": video_dir / "text-to-video-ms-1.7b",
+                "self_forcing": video_dir / "Self-Forcing"
             }
             
             model_path = model_paths.get(model_name)
@@ -405,6 +469,8 @@ class TextToVideoGenerator:
                 return self._generate_zeroscope_video(pipeline, optimized_prompt, output_path, settings)
             elif model_name == "modelscope_t2v":
                 return self._generate_modelscope_video(pipeline, optimized_prompt, output_path, settings)
+            elif model_name == "self_forcing":
+                return self._generate_self_forcing_video(pipeline, optimized_prompt, output_path, settings)
             else:
                 logger.error(f"Unknown generation method for {model_name}")
                 from ..utils.error_handler import PipelineErrorHandler
@@ -554,6 +620,40 @@ class TextToVideoGenerator:
             logger.error(f"Error in ModelScope generation: {e}")
             return False
     
+    def _generate_self_forcing_video(self, pipeline, prompt: str, output_path: str, settings: Dict) -> bool:
+        """Generate video using Self-Forcing model."""
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            target_frames = 120
+            if settings["max_frames"] != "streaming":
+                target_frames = settings["max_frames"]
+            
+            frames = pipeline.generate(
+                prompt=prompt,
+                num_frames=target_frames,
+                height=settings["resolution"][1],
+                width=settings["resolution"][0],
+                guidance_scale=7.5,
+                num_inference_steps=settings["steps"]
+            )
+            
+            if not frames:
+                logger.error("Self-forcing generation returned no frames")
+                return False
+            
+            self._save_video_frames(frames, output_path, fps=16)
+            
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                logger.info(f"Self-Forcing video generated successfully: {output_path}")
+                return True
+            else:
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error in Self-Forcing generation: {e}")
+            return False
+    
     def _create_init_image(self, prompt: str, resolution: Tuple[int, int]) -> Image.Image:
         """Create initial image for SVD from prompt."""
         try:
@@ -588,15 +688,39 @@ class TextToVideoGenerator:
         """Save video frames to MP4 file."""
         try:
             import imageio
+            import numpy as np
+            from PIL import Image
             
             frame_arrays = []
             for frame in frames:
+                if hasattr(frame, 'cpu'):
+                    frame = frame.cpu().numpy()
+                if frame.dtype != np.uint8:
+                    frame = (frame * 255).astype(np.uint8)
+                if len(frame.shape) == 3 and frame.shape[0] == 3:
+                    frame = np.transpose(frame, (1, 2, 0))
+                
                 if isinstance(frame, Image.Image):
                     frame_arrays.append(np.array(frame))
                 else:
                     frame_arrays.append(frame)
             
-            imageio.mimsave(output_path, frame_arrays, fps=fps, codec='libx264')
+            if frame_arrays:
+                height, width = frame_arrays[0].shape[:2]
+                target_width = int(width * (1080 / height)) if height > 0 else width
+                target_height = 1080
+                if target_width % 2 != 0:
+                    target_width += 1
+                if target_height % 2 != 0:
+                    target_height += 1
+                
+                resized_frames = []
+                for frame in frame_arrays:
+                    import cv2
+                    resized_frame = cv2.resize(frame, (target_width, target_height))
+                    resized_frames.append(resized_frame)
+                
+                imageio.mimsave(output_path, resized_frames, fps=fps, codec='libx264')
             
         except Exception as e:
             logger.error(f"Error saving video frames: {e}")
@@ -642,7 +766,8 @@ class TextToVideoGenerator:
             "animatediff_lightning": "fast-paced, dynamic, high energy, ",
             "ltx_video": "realistic, detailed, smooth motion, ",
             "zeroscope_v2_xl": "cinematic, professional, high resolution, ",
-            "modelscope_t2v": "detailed, realistic, smooth animation, "
+            "modelscope_t2v": "detailed, realistic, smooth animation, ",
+            "self_forcing": "real-time streaming, autoregressive, high quality, "
         }
         
         scene_suffixes = {

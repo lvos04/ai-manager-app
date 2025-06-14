@@ -14,6 +14,8 @@ from config import (
 from .database import DBModel
 from .core.model_version_updater import get_model_version_updater
 
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model_manager")
 
@@ -91,6 +93,18 @@ VIDEO_MODELS = {
         "resolution": "960×540",
         "max_frames": "Unlimited",
         "vram_requirement": "ultra"
+    },
+    "self_forcing": {
+        "name": "Self-Forcing Video Generation",
+        "description": "Real-time streaming video generation - 480P, ~16 FPS, autoregressive rollout",
+        "type": "video",
+        "size": "5.68GB",
+        "downloaded": False,
+        "path": None,
+        "model_id": "gdhe17/Self-Forcing",
+        "resolution": "480P (scalable)",
+        "max_frames": "Unlimited (streaming)",
+        "vram_requirement": "high"
     },
 
 }
@@ -766,6 +780,14 @@ HF_MODEL_REPOS = {
     "abyssorangemix3": "WarriorMama777/OrangeMixs",
     "meina_mix": "Meina/MeinaMix",
     "mistoon": "nitrosocke/Arcane-Diffusion",
+    # Video models
+    "zeroscope_v2_xl": "cerspense/zeroscope_v2_XL",
+    "animatediff_v2_sdxl": "guoyww/animatediff-motion-adapter-sdxl-beta",
+    "animatediff_lightning": "ByteDance/AnimateDiff-Lightning",
+    "modelscope_t2v": "damo-vilab/text-to-video-ms-1.7b",
+    "ltx_video": "Lightricks/LTX-Video",
+    "skyreels_v2": "Skywork/SkyReels-V2-T2V-14B-540P",
+    "self_forcing": "gdhe17/Self-Forcing",
     "animagine_v3": "Linaqruf/animagine-xl-3.0",
     "absolutereality": "Lykon/AbsoluteReality",
     "deliberate": "XpucT/Deliberate",
