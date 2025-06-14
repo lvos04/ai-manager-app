@@ -10,8 +10,8 @@ import threading
 import queue
 
 from config import OUTPUT_DIR
-from database import DBProject, DBPipelineRun, DBProjectLora
-from models import ProjectStatus
+from .database import DBProject, DBPipelineRun, DBProjectLora
+from .models import ProjectStatus
 
 logger = logging.getLogger(__name__)
 
