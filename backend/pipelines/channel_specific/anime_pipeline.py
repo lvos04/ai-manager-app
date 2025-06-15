@@ -196,15 +196,15 @@ class AnimeChannelPipeline(BasePipeline):
         for i, enhanced_scene in enumerate(scenes):
             if isinstance(enhanced_scene, dict) and 'video_prompt' in enhanced_scene:
                 video_prompt = enhanced_scene['video_prompt']
-                scene_type = enhanced_scene.get('scene_type', 'default')
-                duration = enhanced_scene.get('duration', 10.0)
-                scene_text = enhanced_scene.get('original_description', f'Scene {i+1}')
-                scene_number = enhanced_scene.get('scene_number', i + 1)
+                scene_type = enhanced_scene.get('scene_type', 'default') if enhanced_scene is not None else 'default'
+                duration = enhanced_scene.get('duration', 10.0) if enhanced_scene is not None else 10.0
+                scene_text = enhanced_scene.get('original_description', f'Scene {i+1}') if enhanced_scene is not None else f'Scene {i+1}'
+                scene_number = enhanced_scene.get('scene_number', i + 1) if enhanced_scene is not None else i + 1
             else:
-                scene_text = enhanced_scene if isinstance(enhanced_scene, str) else enhanced_scene.get('description', f'Scene {i+1}')
+                scene_text = enhanced_scene if isinstance(enhanced_scene, str) else (enhanced_scene.get('description', f'Scene {i+1}') if enhanced_scene is not None else f'Scene {i+1}')
                 video_prompt = f"masterpiece, best quality, ultra detailed, 8k resolution, cinematic lighting, smooth animation, professional anime style, vibrant colors, dynamic composition, {scene_text}, 16:9 aspect ratio, smooth motion, professional cinematography, ultra high definition"
                 scene_type = self._detect_scene_type(scene_text)
-                duration = enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) else 10.0
+                duration = enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) and enhanced_scene is not None else 10.0
                 scene_number = i + 1
             
             scene_detail = {
@@ -277,8 +277,8 @@ class AnimeChannelPipeline(BasePipeline):
                 voice_text = enhanced_scene['voice_prompt']
                 print(f"Using LLM-generated voice prompt for scene {i+1}")
             else:
-                scene_text = enhanced_scene if isinstance(enhanced_scene, str) else enhanced_scene.get('description', f'Scene {i+1}')
-                voice_text = enhanced_scene.get('dialogue', scene_text) if isinstance(enhanced_scene, dict) else scene_text
+                scene_text = enhanced_scene if isinstance(enhanced_scene, str) else (enhanced_scene.get('description', f'Scene {i+1}') if enhanced_scene is not None else f'Scene {i+1}')
+                voice_text = enhanced_scene.get('dialogue', scene_text) if isinstance(enhanced_scene, dict) and enhanced_scene is not None else scene_text
                 from ...utils.error_handler import PipelineErrorHandler
                 voice_error = Exception(f"LLM voice prompt generation failed for scene {i+1}")
                 PipelineErrorHandler.log_error_to_output(
@@ -317,7 +317,7 @@ class AnimeChannelPipeline(BasePipeline):
             for enhanced_scene in scenes:
                 if isinstance(enhanced_scene, dict) and 'music_prompt' in enhanced_scene:
                     music_prompts.append(enhanced_scene['music_prompt'])
-                    duration_val = enhanced_scene.get('duration', 10.0)
+                    duration_val = enhanced_scene.get('duration', 10.0) if enhanced_scene is not None else 10.0
                     if isinstance(duration_val, str):
                         try:
                             duration_val = float(duration_val.replace('seconds', '').strip())
@@ -325,7 +325,7 @@ class AnimeChannelPipeline(BasePipeline):
                             duration_val = 10.0
                     total_duration += duration_val
                 else:
-                    duration_val = enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) else 10.0
+                    duration_val = enhanced_scene.get('duration', 10.0) if isinstance(enhanced_scene, dict) and enhanced_scene is not None else 10.0
                     if isinstance(duration_val, str):
                         try:
                             duration_val = float(duration_val.replace('seconds', '').strip())

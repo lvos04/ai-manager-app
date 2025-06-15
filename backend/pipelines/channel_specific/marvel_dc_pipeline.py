@@ -404,7 +404,7 @@ class MarvelDCChannelPipeline(BasePipeline):
                 )
                 upscaled_path = str(upscaled_video)
             except ImportError:
-                import shutil
+
                 shutil.copy2(str(final_video), str(upscaled_video))
                 upscaled_path = str(upscaled_video)
             print(f"Video upscaled to: {upscaled_path}")
@@ -695,14 +695,14 @@ class MarvelDCChannelPipeline(BasePipeline):
                 logger.warning(f"Video generation failed: {e}")
             
             self._log_video_generation_error(scene_description, duration, output_path, "All video generation methods failed")
-            return None
+            return ""
             
         except Exception as e:
             logger.error(f"Error in scene video generation: {e}")
             self._log_video_generation_error(scene_description, duration, output_path, str(e))
-            return None
+            return ""
     
-    def _optimize_video_prompt(self, prompt: str, channel_type: str = "marvel_dc", model_name: str = None) -> str:
+    def _optimize_video_prompt(self, prompt: str, channel_type: str = "marvel_dc", model_name: Optional[str] = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
         from ...model_manager import BASE_MODEL_PROMPT_TEMPLATES
         
@@ -747,12 +747,12 @@ class MarvelDCChannelPipeline(BasePipeline):
                     return output_path
             
             self._log_voice_generation_error(text, output_path, "All voice generation methods failed")
-            return None
+            return ""
             
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
             self._log_voice_generation_error(text, output_path, str(e))
-            return None
+            return ""
     
 
     
@@ -776,12 +776,12 @@ class MarvelDCChannelPipeline(BasePipeline):
                     return output_path
             
             self._log_music_generation_error(output_path, "All music generation methods failed")
-            return None
+            return ""
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
             self._log_music_generation_error(output_path, str(e))
-            return None
+            return ""
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
                                       target_resolution: str = "1080p", enabled: bool = True) -> str:
@@ -883,7 +883,7 @@ class MarvelDCChannelPipeline(BasePipeline):
                 title = f"Epic Superhero Adventure - Episode {random.randint(1, 100)}"
             
             with open(output_dir / "title.txt", "w", encoding="utf-8") as f:
-                f.write(title.strip())
+                f.write(title.strip() if title else "")
             
             description_prompt = f"Generate a detailed YouTube description for a {channel_type} episode with {len(scenes)} scenes. Include character introductions, plot summary, and engaging hooks for superhero fans. Language: {language}"
             
@@ -898,7 +898,7 @@ class MarvelDCChannelPipeline(BasePipeline):
                 description = f"An epic superhero adventure featuring amazing characters and thrilling action across {len(scenes)} incredible scenes! Experience the world of superheroes like never before!"
             
             with open(output_dir / "description.txt", "w", encoding="utf-8") as f:
-                f.write(description.strip())
+                f.write(description.strip() if description else "")
             
             next_episode_prompt = f"Based on this superhero episode, suggest 3 compelling storylines for the next episode. Be creative and engaging for superhero fans."
             
@@ -913,7 +913,7 @@ class MarvelDCChannelPipeline(BasePipeline):
                 next_suggestions = "1. New villain emerges with greater threat\n2. Hero team-up and alliance formation\n3. Origin story of supporting character"
             
             with open(output_dir / "next_episode.txt", "w", encoding="utf-8") as f:
-                f.write(next_suggestions.strip())
+                f.write(next_suggestions.strip() if next_suggestions else "")
             
         except Exception as e:
             logger.error(f"Error generating YouTube metadata: {e}")
@@ -940,7 +940,7 @@ class MarvelDCChannelPipeline(BasePipeline):
         try:
             if not scene_files:
                 self._log_video_combination_error("No scenes to combine", output_path)
-                return None
+                return ""
             
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 concat_file = f.name
@@ -985,7 +985,7 @@ class MarvelDCChannelPipeline(BasePipeline):
                             "error_details": f"FFmpeg combination failed: {result.stderr}"
                         }
                     )
-                    return None
+                    return ""
                     
             finally:
                 if os.path.exists(concat_file):
@@ -1005,7 +1005,7 @@ class MarvelDCChannelPipeline(BasePipeline):
                     "error_details": str(e)
                 }
             )
-            return None
+            return ""
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
         """Create shorts by extracting highlights from the main video."""

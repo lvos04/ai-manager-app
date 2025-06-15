@@ -405,7 +405,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 
         except Exception as e:
             print(f"Error generating background music: {e}")
-            self._log_music_generation_error("background music", 60.0, str(music_file), str(e))
+            self._log_music_generation_error(str(music_file), str(e))
             music_path = None
         
         print("Step 7: Combining scenes into final original manga episode...")
@@ -468,7 +468,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 )
                 upscaled_path = str(upscaled_video)
             except ImportError:
-                import shutil
+
                 shutil.copy2(str(final_video), str(upscaled_video))
                 upscaled_path = str(upscaled_video)
             print(f"Video upscaled to: {upscaled_path}")
@@ -759,14 +759,14 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 logger.warning(f"Video generation failed: {e}")
             
             self._log_video_generation_error(scene_description, duration, output_path, "All video generation methods failed")
-            return None
+            return ""
             
         except Exception as e:
             logger.error(f"Error in scene video generation: {e}")
             self._log_video_generation_error(scene_description, duration, output_path, str(e))
-            return None
+            return ""
     
-    def _optimize_video_prompt(self, prompt: str, channel_type: str = "original_manga", model_name: str = None) -> str:
+    def _optimize_video_prompt(self, prompt: str, channel_type: str = "original_manga", model_name: Optional[str] = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
         from ...model_manager import BASE_MODEL_PROMPT_TEMPLATES
         
@@ -811,12 +811,12 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     return output_path
             
             self._log_voice_generation_error(text, output_path, "All voice generation methods failed")
-            return None
+            return ""
             
         except Exception as e:
             logger.error(f"Error generating voice: {e}")
             self._log_voice_generation_error(text, output_path, str(e))
-            return None
+            return ""
     
 
     
@@ -840,12 +840,12 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     return output_path
             
             self._log_music_generation_error(output_path, "All music generation methods failed")
-            return None
+            return ""
             
         except Exception as e:
             logger.error(f"Error generating music: {e}")
             self._log_music_generation_error(output_path, str(e))
-            return None
+            return ""
     
     def _upscale_video_with_realesrgan(self, input_path: str, output_path: str, 
                                       target_resolution: str = "1080p", enabled: bool = True) -> str:
@@ -1028,7 +1028,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
                     }
                 )
                 logger.error("Video generation failed: No scenes to combine, error logged to output directory")
-                return None
+                return ""
             
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 concat_file = f.name
@@ -1074,7 +1074,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
                         }
                     )
                     logger.error("Video generation failed: FFmpeg combination failed, error logged to output directory")
-                    return None
+                    return ""
                     
             finally:
                 if os.path.exists(concat_file):
@@ -1096,7 +1096,7 @@ class OriginalMangaChannelPipeline(BasePipeline):
                 }
             )
             logger.error(f"Video generation failed: Error combining scenes: {e}, error logged to output directory")
-            return None
+            return ""
     
     def _create_shorts(self, scene_files: List[str], shorts_dir: Path) -> List[str]:
         """Create shorts by extracting highlights from the main video."""

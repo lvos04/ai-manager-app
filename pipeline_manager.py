@@ -323,24 +323,22 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-try:
-    from backend.pipelines.channel_specific.anime_pipeline import AnimePipeline
-    from backend.pipelines.channel_specific.gaming_pipeline import GamingPipeline
-    from backend.pipelines.channel_specific.manga_pipeline import MangaPipeline
-    from backend.pipelines.channel_specific.marvel_dc_pipeline import MarvelDCPipeline
-    from backend.pipelines.channel_specific.superhero_pipeline import SuperheroPipeline
-    from backend.pipelines.channel_specific.original_manga_pipeline import OriginalMangaPipeline
-except ImportError as e:
-    print(f"Warning: Could not import pipeline classes: {e}")
-    print("Pipeline execution may not work properly.")
+from backend.pipelines.channel_specific import (
+    anime_pipeline,
+    gaming_pipeline,
+    manga_pipeline,
+    marvel_dc_pipeline,
+    superhero_pipeline,
+    original_manga_pipeline,
+)
 
 PIPELINE_MAP = {
-    "anime": AnimePipeline,
-    "gaming": GamingPipeline,
-    "manga": MangaPipeline,
-    "marvel_dc": MarvelDCPipeline,
-    "superhero": SuperheroPipeline,
-    "original_manga": OriginalMangaPipeline,
+    "anime": anime_pipeline.AnimeChannelPipeline,
+    "gaming": gaming_pipeline.GamingChannelPipeline,
+    "manga": manga_pipeline.MangaChannelPipeline,
+    "marvel_dc": marvel_dc_pipeline.MarvelDCChannelPipeline,
+    "superhero": superhero_pipeline.SuperheroChannelPipeline,
+    "original_manga": original_manga_pipeline.OriginalMangaChannelPipeline,
 }
 
 def setup_logging(log_file: Optional[str] = None, log_level: str = "INFO") -> None:
@@ -439,19 +437,20 @@ def validate_pipeline_config(config: Dict[str, Any], pipeline_type: str) -> bool
     if pipeline_type in required_fields:
         for field in required_fields[pipeline_type]:
             if field not in config:
-                if field == "script" and not any(key in config for key in ["content", "story", "text"]):
-                    raise ValueError(f"Configuration missing required field: {field}")
+                if field == "script" and not any(key in config for key in ["content", "story", "text", "scenes", "dialogue", "narrative"]):
+                    raise ValueError(f"Configuration missing required field: {field} (or alternative: content, story, text, scenes, dialogue, narrative)")
     
     logging.info(f"Configuration validation passed for {pipeline_type} pipeline")
     return True
 
-def run_pipeline(pipeline_type: str, config: Dict[str, Any], **kwargs) -> None:
+def run_pipeline(pipeline_type: str, config: Dict[str, Any], input_file: str, **kwargs) -> None:
     """
     Execute the specified pipeline with the given configuration.
     
     Args:
         pipeline_type: Type of pipeline to run
         config: Configuration dictionary
+        input_file: Original input file path
         **kwargs: Additional parameters for pipeline execution
     """
     if pipeline_type not in PIPELINE_MAP:
@@ -465,19 +464,34 @@ def run_pipeline(pipeline_type: str, config: Dict[str, Any], **kwargs) -> None:
     try:
         logging.info(f"Initializing {pipeline_type} pipeline...")
         
-        pipeline = pipeline_class()
+        init_kwargs = {}
+        if "output_path" in kwargs:
+            init_kwargs["output_path"] = kwargs["output_path"]
+        if "base_model" in kwargs:
+            init_kwargs["base_model"] = kwargs["base_model"]
         
-        pipeline_params = {
-            "config": config,
-            **kwargs
+        pipeline = pipeline_class(**init_kwargs)
+        
+        run_params = {
+            "input_path": input_file,
+            "output_path": kwargs.get("output_path", "./output"),
         }
         
-        pipeline_params = {k: v for k, v in pipeline_params.items() if v is not None}
+        if "base_model" in kwargs:
+            run_params["base_model"] = kwargs["base_model"]
+        if "render_fps" in kwargs:
+            run_params["render_fps"] = kwargs["render_fps"]
+        if "output_fps" in kwargs:
+            run_params["output_fps"] = kwargs["output_fps"]
+        if "language" in kwargs:
+            run_params["language"] = kwargs["language"]
+        
+        run_params = {k: v for k, v in run_params.items() if v is not None}
         
         logging.info(f"Starting {pipeline_type} pipeline execution...")
-        logging.info(f"Pipeline parameters: {list(pipeline_params.keys())}")
+        logging.info(f"Pipeline parameters: {list(run_params.keys())}")
         
-        result = pipeline.run(**pipeline_params)
+        result = pipeline.run(**run_params)
         
         logging.info(f"{pipeline_type} pipeline completed successfully")
         if result:
@@ -652,7 +666,7 @@ Examples:
         if args.language != "en":
             pipeline_kwargs["language"] = args.language
         
-        run_pipeline(args.pipeline, config, **pipeline_kwargs)
+        run_pipeline(args.pipeline, config, args.config, **pipeline_kwargs)
         
         logging.info("Pipeline manager execution completed successfully")
         
