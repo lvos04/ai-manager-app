@@ -1327,7 +1327,7 @@ def check_model_downloaded(model_id: str, model_type: str) -> bool:
     
     # Priority 1: Check database state first
     try:
-        from backend.database import get_db, DBModel
+        from .database import get_db, DBModel
         db = next(get_db())
         
         # Query database for this specific model

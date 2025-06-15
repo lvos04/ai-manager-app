@@ -704,7 +704,7 @@ class MarvelDCChannelPipeline(BasePipeline):
     
     def _optimize_video_prompt(self, prompt: str, channel_type: str = "marvel_dc", model_name: str = None) -> str:
         """Optimize prompt for video generation with maximum quality."""
-        from backend.model_manager import BASE_MODEL_PROMPT_TEMPLATES
+        from ...model_manager import BASE_MODEL_PROMPT_TEMPLATES
         
         if model_name and model_name in BASE_MODEL_PROMPT_TEMPLATES:
             template = BASE_MODEL_PROMPT_TEMPLATES[model_name]
