@@ -957,6 +957,234 @@ class NewProjectDialog(QDialog):
             template_dialog = TemplateDialog(template, self)
             template_dialog.exec()
 
+class DirectPipelineDialog(QDialog):
+    """Dialog for direct pipeline execution with file selection."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Run Pipeline Directly")
+        self.setModal(True)
+        self.resize(700, 500)
+        
+        self.init_ui()
+        self.load_example_configs()
+    
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        header_label = QLabel("Direct Pipeline Execution")
+        header_label.setStyleSheet(get_header_style())
+        layout.addWidget(header_label)
+        
+        # Pipeline type selection
+        pipeline_group = QGroupBox("Pipeline Type")
+        pipeline_layout = QVBoxLayout()
+        
+        self.pipeline_combo = QComboBox()
+        self.pipeline_combo.addItems([
+            "anime", "gaming", "manga", "marvel_dc", "superhero", "original_manga"
+        ])
+        self.pipeline_combo.currentTextChanged.connect(self.on_pipeline_changed)
+        pipeline_layout.addWidget(self.pipeline_combo)
+        
+        pipeline_group.setLayout(pipeline_layout)
+        layout.addWidget(pipeline_group)
+        
+        # Input file selection
+        input_group = QGroupBox("Input Configuration")
+        input_layout = QVBoxLayout()
+        
+        # File selection
+        file_layout = QHBoxLayout()
+        self.input_file_edit = QLineEdit()
+        self.input_file_edit.setPlaceholderText("Select input file (YAML, JSON, or TXT)")
+        
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(self.browse_input_file)
+        
+        file_layout.addWidget(self.input_file_edit)
+        file_layout.addWidget(browse_button)
+        input_layout.addLayout(file_layout)
+        
+        example_layout = QHBoxLayout()
+        example_label = QLabel("Load Example:")
+        self.example_combo = QComboBox()
+        self.example_combo.addItem("Select an example...")
+        self.example_combo.currentTextChanged.connect(self.load_example_config)
+        
+        example_layout.addWidget(example_label)
+        example_layout.addWidget(self.example_combo)
+        input_layout.addLayout(example_layout)
+        
+        input_group.setLayout(input_layout)
+        layout.addWidget(input_group)
+        
+        # Output directory selection
+        output_group = QGroupBox("Output Directory")
+        output_layout = QHBoxLayout()
+        
+        self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setPlaceholderText("Select output directory (optional)")
+        
+        output_browse_button = QPushButton("Browse...")
+        output_browse_button.clicked.connect(self.browse_output_dir)
+        
+        output_layout.addWidget(self.output_dir_edit)
+        output_layout.addWidget(output_browse_button)
+        
+        output_group.setLayout(output_layout)
+        layout.addWidget(output_group)
+        
+        advanced_group = QGroupBox("Advanced Settings")
+        advanced_layout = QVBoxLayout()
+        
+        # Base model
+        model_layout = QHBoxLayout()
+        model_layout.addWidget(QLabel("Base Model:"))
+        self.base_model_combo = QComboBox()
+        self.base_model_combo.addItems([
+            "stable_diffusion_1_5", "stable_diffusion_xl", "anythingv5"
+        ])
+        model_layout.addWidget(self.base_model_combo)
+        advanced_layout.addLayout(model_layout)
+        
+        fps_layout = QHBoxLayout()
+        fps_layout.addWidget(QLabel("Render FPS:"))
+        self.render_fps_spin = QSpinBox()
+        self.render_fps_spin.setRange(12, 60)
+        self.render_fps_spin.setValue(24)
+        fps_layout.addWidget(self.render_fps_spin)
+        
+        fps_layout.addWidget(QLabel("Output FPS:"))
+        self.output_fps_spin = QSpinBox()
+        self.output_fps_spin.setRange(12, 60)
+        self.output_fps_spin.setValue(24)
+        fps_layout.addWidget(self.output_fps_spin)
+        advanced_layout.addLayout(fps_layout)
+        
+        lang_layout = QHBoxLayout()
+        lang_layout.addWidget(QLabel("Language:"))
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["en", "ja", "es", "fr", "de"])
+        lang_layout.addWidget(self.language_combo)
+        advanced_layout.addLayout(lang_layout)
+        
+        advanced_group.setLayout(advanced_layout)
+        layout.addWidget(advanced_group)
+        
+        button_layout = QHBoxLayout()
+        
+        self.run_button = QPushButton("Run Pipeline")
+        self.run_button.clicked.connect(self.run_pipeline)
+        self.run_button.setEnabled(False)
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addWidget(self.run_button)
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect input file change to enable/disable run button
+        self.input_file_edit.textChanged.connect(self.validate_inputs)
+    
+    def load_example_configs(self):
+        """Load available example configurations."""
+        import os
+        from pathlib import Path
+        
+        self.examples = {}
+        docs_dir = Path("input_formats_documentation")
+        
+        if not docs_dir.exists():
+            return
+        
+        for channel_dir in docs_dir.iterdir():
+            if channel_dir.is_dir():
+                channel_type = channel_dir.name
+                self.examples[channel_type] = []
+                
+                examples_dir = channel_dir / "examples"
+                templates_dir = channel_dir / "templates"
+                
+                if examples_dir.exists():
+                    for example_file in examples_dir.iterdir():
+                        if example_file.suffix.lower() in [".yaml", ".yml", ".json", ".txt"]:
+                            self.examples[channel_type].append(str(example_file))
+                
+                if templates_dir.exists():
+                    for template_file in templates_dir.iterdir():
+                        if template_file.suffix.lower() in [".yaml", ".yml", ".json", ".txt"]:
+                            self.examples[channel_type].append(str(template_file))
+        
+        self.on_pipeline_changed()
+    
+    def on_pipeline_changed(self):
+        """Update example configurations when pipeline type changes."""
+        pipeline_type = self.pipeline_combo.currentText()
+        
+        self.example_combo.clear()
+        self.example_combo.addItem("Select an example...")
+        
+        if pipeline_type in self.examples:
+            for example_path in self.examples[pipeline_type]:
+                example_name = os.path.basename(example_path)
+                self.example_combo.addItem(example_name, example_path)
+    
+    def load_example_config(self):
+        """Load selected example configuration."""
+        if self.example_combo.currentIndex() > 0:
+            example_path = self.example_combo.currentData()
+            if example_path:
+                self.input_file_edit.setText(example_path)
+    
+    def browse_input_file(self):
+        """Browse for input configuration file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Input Configuration",
+            "", "Config Files (*.yaml *.yml *.json *.txt);;All Files (*)"
+        )
+        if file_path:
+            self.input_file_edit.setText(file_path)
+    
+    def browse_output_dir(self):
+        """Browse for output directory."""
+        dir_path = QFileDialog.getExistingDirectory(
+            self, "Select Output Directory"
+        )
+        if dir_path:
+            self.output_dir_edit.setText(dir_path)
+    
+    def validate_inputs(self):
+        """Validate inputs and enable/disable run button."""
+        has_input = bool(self.input_file_edit.text().strip())
+        self.run_button.setEnabled(has_input)
+    
+    def run_pipeline(self):
+        """Execute the pipeline with selected parameters."""
+        pipeline_type = self.pipeline_combo.currentText()
+        input_file = self.input_file_edit.text().strip()
+        output_path = self.output_dir_edit.text().strip() or None
+        
+        if not input_file:
+            QMessageBox.warning(self, "Error", "Please select an input file.")
+            return
+        
+        if not os.path.exists(input_file):
+            QMessageBox.warning(self, "Error", f"Input file not found: {input_file}")
+            return
+        
+        parent_window = self.parent()
+        if hasattr(parent_window, 'start_project_with_pipeline_manager'):
+            parent_window.start_project_with_pipeline_manager(
+                pipeline_type, input_file, output_path
+            )
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Error", "Pipeline manager not available.")
+
 class TemplateDialog(QDialog):
     def __init__(self, template, parent=None):
         super().__init__(parent)

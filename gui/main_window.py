@@ -10,7 +10,7 @@ from .qt_compat import (
     QAction, QIcon
 )
 
-from .project_dialogs import NewProjectDialog
+from .project_dialogs import NewProjectDialog, DirectPipelineDialog
 from .model_manager_dialog import ModelManagerDialog
 from .styles import get_app_stylesheet, get_header_style, get_warning_style, get_success_style, get_subheader_style, get_info_style
 from config import API_HOST, API_PORT
@@ -126,6 +126,10 @@ class MainWindow(QMainWindow):
         new_project_action = QAction("New Project", self)
         new_project_action.triggered.connect(self.create_new_project)
         toolbar.addAction(new_project_action)
+        
+        pipeline_action = QAction("Run Pipeline Directly", self)
+        pipeline_action.triggered.connect(self.open_pipeline_dialog)
+        toolbar.addAction(pipeline_action)
     
     def setup_statusbar(self):
         # Create status bar
@@ -177,6 +181,57 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to create project: {str(e)}")
     
+    def start_project_with_pipeline_manager(self, pipeline_type, input_file, output_path=None):
+        """Start a project using the central pipeline manager."""
+        import subprocess
+        import os
+        
+        try:
+            cmd = [
+                sys.executable, "pipeline_manager.py",
+                "--pipeline", pipeline_type,
+                "--config", input_file
+            ]
+            
+            if output_path:
+                cmd.extend(["--output", output_path])
+            
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = f"pipeline_{pipeline_type}_{timestamp}.log"
+            cmd.extend(["--log-file", log_file])
+            
+            self.statusBar.showMessage(f"Starting {pipeline_type} pipeline...")
+            
+            process = subprocess.Popen(
+                cmd,
+                cwd=os.path.dirname(os.path.abspath(__file__ + "/..")),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if not hasattr(self, 'active_processes'):
+                self.active_processes = {}
+            self.active_processes[pipeline_type] = {
+                'process': process,
+                'log_file': log_file,
+                'input_file': input_file,
+                'output_path': output_path
+            }
+            
+            QMessageBox.information(
+                self, "Pipeline Started", 
+                f"Pipeline started successfully!\n"
+                f"Type: {pipeline_type}\n"
+                f"Input: {input_file}\n"
+                f"Log file: {log_file}\n\n"
+                f"Check the log file for progress updates."
+            )
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to start pipeline: {str(e)}")
+    
     def show_project_context_menu(self, position):
         item = self.project_list.itemAt(position)
         if item is None:
@@ -210,6 +265,42 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Error", f"Failed to start pipeline: {response.text}")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to start pipeline: {str(e)}")
+    
+    def open_pipeline_dialog(self):
+        """Open dialog for direct pipeline execution."""
+        dialog = DirectPipelineDialog(self)
+        dialog.exec()
+    
+    def load_example_configs(self):
+        """Load available example configurations."""
+        import os
+        from pathlib import Path
+        
+        examples = {}
+        docs_dir = Path("input_formats_documentation")
+        
+        if not docs_dir.exists():
+            return examples
+        
+        for channel_dir in docs_dir.iterdir():
+            if channel_dir.is_dir():
+                channel_type = channel_dir.name
+                examples[channel_type] = []
+                
+                examples_dir = channel_dir / "examples"
+                templates_dir = channel_dir / "templates"
+                
+                if examples_dir.exists():
+                    for example_file in examples_dir.iterdir():
+                        if example_file.suffix.lower() in [".yaml", ".yml", ".json", ".txt"]:
+                            examples[channel_type].append(str(example_file))
+                
+                if templates_dir.exists():
+                    for template_file in templates_dir.iterdir():
+                        if template_file.suffix.lower() in [".yaml", ".yml", ".json", ".txt"]:
+                            examples[channel_type].append(str(template_file))
+        
+        return examples
             
     def delete_project(self, project_id):
         """Delete a project after confirmation."""
