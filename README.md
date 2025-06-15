@@ -36,10 +36,17 @@ A desktop application for managing AI content generation projects with LoRA mode
    ```bash
    sudo apt-get install -y libxcb-cursor0 libxcb-xinerama0 libxcb-xkb1 libxcb-shape0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-sync1 libxcb-xfixes0 libxkbcommon-x11-0
    ```
-4. Run the application: 
+4. Run the application:
    ```bash
    python main.py
    ```
+
+### Video Model Setup
+
+The application uses a configurable text-to-video model. If a preferred model is
+missing, it falls back to the model defined in `config.DEFAULT_VIDEO_MODEL`.
+Place downloaded models under `models/video/` or set custom paths in
+`backend/model_manager.py`.
 
 ## Usage
 
@@ -79,6 +86,9 @@ The executable will be created in the `dist/AI_Project_Manager` directory.
 - `assets/`: Application assets
 - `models/`: AI model storage
 - `output/`: Pipeline output directory
+
+If video generation fails, a small placeholder clip is created automatically in
+the output directory. Check `error_log.txt` next to the video for details.
 
 ## Example: Validate License Plate
 

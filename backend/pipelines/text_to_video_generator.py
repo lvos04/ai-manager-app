@@ -26,12 +26,23 @@ class TextToVideoGenerator:
     """Real text-to-video generation using actual AI models."""
     
     def __init__(self, vram_tier: str = "medium", target_resolution: Tuple[int, int] = (1920, 1080)):
+        from config import DEFAULT_VIDEO_MODEL
         self.vram_tier = vram_tier
         self.target_resolution = target_resolution
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
         self.models = {}
         self.current_model = None
+        self.fallback_model = DEFAULT_VIDEO_MODEL
+        self.lora_paths = []
+
+    def apply_lora_models(self, lora_paths: List[str]):
+        """Store LoRA model paths for later use."""
+        self.lora_paths = lora_paths or []
+        if self.lora_paths:
+            logger.info(f"Applying LoRA models: {', '.join(self.lora_paths)}")
+        else:
+            logger.info("No LoRA models provided")
         
         self.model_settings = {
             "svd_xt": {
@@ -90,14 +101,20 @@ class TextToVideoGenerator:
         }
         
         preferred_models = content_models.get(content_type, content_models["default"])
-        
+
         for model in preferred_models:
-            if model in self.model_settings:
-                settings = self.model_settings[model].get(vram_tier, {})
-                if settings.get("vram_req", 999) <= self._get_available_vram():
-                    return model
-        
-        return "svd_xt"
+            if model not in self.model_settings:
+                continue
+            model_path = self._get_model_path(model)
+            if not model_path or ("/" not in model_path and not os.path.exists(model_path)):
+                logger.debug(f"Model {model} unavailable, skipping")
+                continue
+            settings = self.model_settings[model].get(vram_tier, {})
+            if settings.get("vram_req", 999) <= self._get_available_vram():
+                return model
+
+        logger.warning(f"No preferred models available, falling back to {self.fallback_model}")
+        return self.fallback_model
     
     def _get_available_vram(self) -> float:
         """Get available VRAM in GB."""

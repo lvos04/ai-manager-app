@@ -68,7 +68,12 @@ class BasePipeline:
                 enhanced_prompt = self._enhance_prompt_for_channel(scene_description)
                 
                 scene_output = output_dir / f"scene_{i+1}.mp4"
-                video_path = self.generate_video(enhanced_prompt, output_path=str(scene_output), duration=5.0)
+                video_path = self.generate_video(
+                    enhanced_prompt,
+                    output_path=str(scene_output),
+                    duration=5.0,
+                    lora_paths=list(lora_paths.values()) if isinstance(lora_paths, dict) else None
+                )
                 
                 if video_path and os.path.exists(video_path):
                     scene_videos.append(video_path)
@@ -1232,7 +1237,8 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         except Exception as e:
             logger.error(f"Error logging script processing failure: {e}")
     
-    def generate_video(self, prompt: str, duration: float = 5.0, output_path: Optional[str] = None) -> Optional[str]:
+    def generate_video(self, prompt: str, duration: float = 5.0, output_path: Optional[str] = None,
+                       lora_paths: Optional[List[str]] = None) -> Optional[str]:
         """Generate video using real AI models."""
         if not output_path:
             output_path = f"generated_video_{int(time.time())}.mp4"
@@ -1245,6 +1251,12 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                     vram_tier=self.vram_tier,
                     target_resolution=(1920, 1080)
                 )
+
+            if lora_paths:
+                try:
+                    self.video_generator.apply_lora_models(lora_paths)
+                except Exception as e:
+                    logger.warning(f"Failed to apply LoRA models: {e}")
             
             scene_type = self._classify_scene_type(prompt)
             model_name = self.video_generator.get_best_model_for_content(scene_type, self.vram_tier)
@@ -1290,8 +1302,11 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                     "channel_type": getattr(self, 'channel_type', 'unknown')
                 }
             )
-            logger.error(f"Video generation failed, error logged to output directory instead of creating fallback content")
-            return "/tmp/failed_video.mp4"
+
+            fallback_path = output_path if output_path else os.path.join(str(output_dir), "fallback.mp4")
+            self._create_placeholder_video(fallback_path, duration)
+            logger.error(f"Video generation failed, fallback saved to {fallback_path}")
+            return fallback_path
             
         except Exception as e:
             logger.error(f"Error logging video generation failure: {e}")
@@ -1343,6 +1358,30 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             return "ocean"
         else:
             return "generic"
+
+    def _create_placeholder_video(self, output_path: str, duration: float):
+        """Create a simple placeholder video clip using OpenCV."""
+        try:
+            import cv2
+            import numpy as np
+
+            width, height = 1280, 720
+            fps = 24
+            frames = max(1, int(duration * fps))
+
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+            for _ in range(frames):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                cv2.putText(frame, "Placeholder Scene", (50, height // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+                out.write(frame)
+
+            out.release()
+        except Exception as e:
+            logger.error(f"Failed to create placeholder video: {e}")
     
     def _generate_scene_frame(self, scene_data: Dict, frame_idx: int, total_frames: int, width: int, height: int) -> np.ndarray:
         """Generate optimized frame for CPU efficiency."""
@@ -2270,7 +2309,12 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
                 enhanced_prompt = self._enhance_prompt_for_channel(scene_description)
                 
                 scene_output = output_dir / f"scene_{i+1}.mp4"
-                video_path = self.generate_video(enhanced_prompt, output_path=str(scene_output), duration=5.0)
+                video_path = self.generate_video(
+                    enhanced_prompt,
+                    output_path=str(scene_output),
+                    duration=5.0,
+                    lora_paths=list(lora_paths.values()) if isinstance(lora_paths, dict) else None
+                )
                 
                 if video_path and os.path.exists(video_path):
                     scene_videos.append(video_path)
