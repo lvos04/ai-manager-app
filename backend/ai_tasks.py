@@ -378,7 +378,7 @@ def process_pipeline_queue():
     """
     global is_processing
     
-    from database import get_db
+    from .database import get_db
     
     while is_processing:
         try:

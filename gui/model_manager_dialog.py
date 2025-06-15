@@ -58,7 +58,8 @@ class ModelManagerDialog(QDialog):
         self.api_url = f"http://{API_HOST}:{API_PORT}"
         
         self.setWindowTitle("AI Model Manager")
-        self.setMinimumSize(700, 600)
+        self.setMinimumSize(900, 800)
+        self.resize(1000, 900)
         
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.auto_check_updates)
