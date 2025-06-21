@@ -46,7 +46,11 @@ class MultiLanguagePipelineManager:
             async_manager = get_async_pipeline_manager()
             
             base_result = await async_manager.execute_pipeline_async(scenes, base_config)
-            if not base_result.get("success", False):
+
+            if isinstance(base_result, str):
+                base_result = {"success": True, "output_path": base_result}
+
+            if not isinstance(base_result, dict) or not base_result.get("success", False):
                 raise Exception("Base video generation failed")
             
             logger.info("Base video generation completed successfully")
@@ -125,8 +129,11 @@ class MultiLanguagePipelineManager:
         async_manager = get_async_pipeline_manager()
         
         audio_result = await async_manager.execute_pipeline_async(translated_scenes, lang_config)
-        
-        if not audio_result.get("success", False):
+
+        if isinstance(audio_result, str):
+            audio_result = {"success": True, "output_path": audio_result}
+
+        if not isinstance(audio_result, dict) or not audio_result.get("success", False):
             raise Exception(f"Audio generation failed for {language_code}")
         
         await self._combine_video_with_audio(base_output_path, lang_output_dir, language_code, lang_config)
@@ -171,11 +178,16 @@ class MultiLanguagePipelineManager:
                 logger.info(f"Generating short {i+1} for {language_code}")
                 
                 short_result = await async_manager.execute_pipeline_async([scene], short_config)
-                
+
+                if isinstance(short_result, str):
+                    short_result = {"success": True, "output_path": short_result}
+
                 if short_result.get("success"):
                     logger.info(f"Short {i+1} generated successfully for {language_code}")
                 else:
-                    logger.error(f"Short {i+1} generation failed for {language_code}: {short_result.get('error')}")
+                    logger.error(
+                        f"Short {i+1} generation failed for {language_code}: {short_result.get('error')}"
+                    )
                 
         except Exception as e:
             logger.error(f"Shorts generation failed for {language_code}: {e}")

@@ -1236,6 +1236,15 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
             
         except Exception as e:
             logger.error(f"Error logging script processing failure: {e}")
+
+    def _get_model_settings(self) -> Dict[str, Any]:
+        """Return model settings for TextToVideoGenerator."""
+        return {
+            "base_model": self.base_model,
+            "device": self.device,
+            "dtype": self.dtype,
+            "vram_tier": self.vram_tier,
+        }
     
     def generate_video(self, prompt: str, duration: float = 5.0, output_path: Optional[str] = None,
                        lora_paths: Optional[List[str]] = None) -> Optional[str]:
@@ -1245,11 +1254,12 @@ Focus on creating prompts that will generate the highest quality {channel_type} 
         
         try:
             from ..text_to_video_generator import TextToVideoGenerator
-            
+
             if not hasattr(self, 'video_generator') or self.video_generator is None:
                 self.video_generator = TextToVideoGenerator(
                     vram_tier=self.vram_tier,
-                    target_resolution=(1920, 1080)
+                    target_resolution=(1920, 1080),
+                    model_settings=self._get_model_settings(),
                 )
 
             if lora_paths:

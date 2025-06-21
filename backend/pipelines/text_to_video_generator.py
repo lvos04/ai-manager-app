@@ -24,9 +24,15 @@ logger = logging.getLogger(__name__)
 
 class TextToVideoGenerator:
     """Real text-to-video generation using actual AI models."""
-    
-    def __init__(self, vram_tier: str = "medium", target_resolution: Tuple[int, int] = (1920, 1080)):
+
+    def __init__(
+        self,
+        vram_tier: str = "medium",
+        target_resolution: Tuple[int, int] = (1920, 1080),
+        model_settings: Optional[Dict[str, Any]] = None,
+    ):
         from config import DEFAULT_VIDEO_MODEL
+
         self.vram_tier = vram_tier
         self.target_resolution = target_resolution
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -35,6 +41,11 @@ class TextToVideoGenerator:
         self.current_model = None
         self.fallback_model = DEFAULT_VIDEO_MODEL
         self.lora_paths = []
+        self.model_settings = model_settings or {}
+
+        if not self.model_settings:
+            # Initialize default model settings so later methods don't fail
+            self.apply_lora_models([])
 
     def apply_lora_models(self, lora_paths: List[str]):
         """Store LoRA model paths for later use."""
